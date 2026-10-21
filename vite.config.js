@@ -11,6 +11,9 @@ export default defineConfig(({mode}) => {
 
   return {
     plugins: [react()],
+    build: {
+      outDir: 'dist'
+    },
     resolve: useMock ? {
       alias: {
         'firebase/app': path.resolve(__dirname, 'src/mock/firebase-app.js'),
