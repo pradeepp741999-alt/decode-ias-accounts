@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function me(){ return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function ok(){ return request.auth != null && me().active == true; }
+    function admin(){ return ok() && me().role == 'super_admin'; }
+    function canFees(){ return ok() && me().role in ['super_admin','fees','both']; }
+    function canRep(){ return ok() && me().role in ['super_admin','reports','both']; }
+
+    match /users/{u}    { allow read: if request.auth != null && (request.auth.uid == u || admin()); allow write: if admin(); }
+    match /courses/{c}  { allow read: if ok(); allow write: if admin(); }
+    match /students/{s} { allow read: if canFees() || canRep(); allow create, update: if canFees(); allow delete: if false; }
+    match /payments/{p} { allow read: if canFees() || canRep(); allow create: if canFees(); allow update, delete: if false; }
+  }
+}
