@@ -12,6 +12,7 @@ td:last-child{text-align:right;font-weight:bold}.sig{margin-top:36px;text-align:
 <tr><td>Father</td><td>${r.fatherName||'-'}</td></tr>
 <tr><td>Mobile</td><td>${r.mobile}</td></tr>
 <tr><td>Course</td><td>${r.courseName}</td></tr>
+${r.courseFee&&r.discountAmt?`<tr><td>Course Fee</td><td>₹${r.courseFee}</td></tr><tr><td>Discount Amount</td><td>-₹${r.discountAmt}</td></tr>`:''}
 <tr><td>Net Fee</td><td>₹${r.netFee}</td></tr>
 <tr><td>Paid Now (${r.mode})</td><td>₹${r.amount}</td></tr>
 ${r.transId?`<tr><td>Transaction ID</td><td>${r.transId}</td></tr>`:''}

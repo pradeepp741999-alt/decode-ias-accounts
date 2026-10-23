@@ -4,7 +4,7 @@ import {db} from '../firebase';
 import {today,calcNet,calcBalance,inr,toDmy} from '../util';
 import {printReceipt} from '../receipt';
 
-const blank={date:today(),name:'',fatherName:'',mobile:'',courseId:'',discountPct:0,mode:'cash',paid:'',transId:'',nextDueDate:'',remarks:''};
+const blank={date:today(),name:'',fatherName:'',mobile:'',courseId:'',discountAmt:'',mode:'cash',paid:'',transId:'',nextDueDate:'',remarks:''};
 
 export default function Enroll({me,done,onBack}){
   const [courses,setCourses]=useState([]);
@@ -17,12 +17,18 @@ export default function Enroll({me,done,onBack}){
   },[]);
 
   const set=k=>e=>setF({...f,[k]:e.target.value});
-  const c=courses.find(x=>x.id===f.courseId),fee=c?.fee||0,net=calcNet(fee,f.discountPct),paid=Number(f.paid)||0,bal=calcBalance(net,paid);
+  const c=courses.find(x=>x.id===f.courseId);
+  const fee=c?.fee||0;
+  const discount=Number(f.discountAmt)||0;
+  const net=calcNet(fee,discount);
+  const paid=Number(f.paid)||0;
+  const bal=calcBalance(net,paid);
 
   const save=async e=>{
     e.preventDefault();
     setErr('');
     if(!c)return setErr('Select a course.');
+    if(discount>fee)return setErr(`Discount amount cannot exceed course fee (${inr(fee)}).`);
     if(paid<=0)return setErr('Enter the amount paid now.');
     if(paid>net)return setErr('Paid amount is more than the net fee.');
     if(f.mode==='online'&&!f.transId.trim())return setErr('Transaction ID is mandatory for online payment.');
@@ -30,14 +36,41 @@ export default function Enroll({me,done,onBack}){
     setBusy(true);
     try{
       const b=writeBatch(db),sr=doc(collection(db,'students')),pr=doc(collection(db,'payments'));
-      const s={date:f.date,name:f.name.trim(),fatherName:f.fatherName.trim(),mobile:f.mobile.trim(),courseId:c.id,courseName:c.name,
-        courseFee:fee,discountPct:Number(f.discountPct)||0,netFee:net,totalPaid:paid,balance:bal,nextDueDate:bal>0?f.nextDueDate:'',
-        remarks:f.remarks,createdBy:me.name,createdAt:serverTimestamp()};
+      const s={
+        date:f.date,
+        name:f.name.trim(),
+        fatherName:f.fatherName.trim(),
+        mobile:f.mobile.trim(),
+        courseId:c.id,
+        courseName:c.name,
+        courseFee:fee,
+        discountAmt:discount,
+        discountPct:fee>0?Math.round((discount/fee)*100):0,
+        netFee:net,
+        totalPaid:paid,
+        balance:bal,
+        nextDueDate:bal>0?f.nextDueDate:'',
+        remarks:f.remarks,
+        createdBy:me.name,
+        createdAt:serverTimestamp()
+      };
       b.set(sr,s);
-      b.set(pr,{studentId:sr.id,studentName:s.name,courseId:c.id,courseName:c.name,date:f.date,amount:paid,mode:f.mode,
-        transId:f.mode==='online'?f.transId.trim():'',nextDueDate:s.nextDueDate,remarks:f.remarks,createdBy:me.name,createdAt:serverTimestamp()});
+      b.set(pr,{
+        studentId:sr.id,
+        studentName:s.name,
+        courseId:c.id,
+        courseName:c.name,
+        date:f.date,
+        amount:paid,
+        mode:f.mode,
+        transId:f.mode==='online'?f.transId.trim():'',
+        nextDueDate:s.nextDueDate,
+        remarks:f.remarks,
+        createdBy:me.name,
+        createdAt:serverTimestamp()
+      });
       await b.commit();
-      printReceipt({...s,amount:paid,mode:f.mode,transId:f.transId,date:f.date});
+      printReceipt({...s,amount:paid,mode:f.mode,transId:f.transId,date:f.date,courseFee:fee,discountAmt:discount});
       setF(blank);done&&done();
     }catch(x){setErr('Save failed: '+x.message);}
     setBusy(false);
@@ -74,7 +107,17 @@ export default function Enroll({me,done,onBack}){
               </select>
             </label>
             <label>Base Course Fee<input value={fee?inr(fee):'Select a course'} readOnly style={{background:'#edf2f7',fontWeight:600}}/></label>
-            <label>Discount %<input type="number" min="0" max="100" value={f.discountPct} onChange={set('discountPct')}/></label>
+            <label>
+              Discount Amount (₹)
+              <input
+                type="number"
+                min="0"
+                max={fee||undefined}
+                value={f.discountAmt}
+                onChange={set('discountAmt')}
+                placeholder="e.g. 1000, 2000"
+              />
+            </label>
           </div>
         </div>
 
@@ -101,7 +144,9 @@ export default function Enroll({me,done,onBack}){
         <div className="sub-card" style={{background:'#f6f9fe',border:'1px solid #c8d8f2'}}>
           <h4>💰 3. Fees Summary</h4>
           <div style={{display:'flex',gap:'20px',flexWrap:'wrap',alignItems:'center'}}>
-            <div>Net Fee: <b style={{color:'var(--navy)',fontSize:'16px'}}>{inr(net)}</b></div>
+            <div>Base Fee: <b>{inr(fee)}</b></div>
+            {discount > 0 && <div>Discount: <b style={{color:'var(--gold)'}}>-{inr(discount)}</b></div>}
+            <div>Total Net Fee: <b style={{color:'var(--navy)',fontSize:'16px'}}>{inr(net)}</b></div>
             <div>Paid Now: <b style={{color:'var(--grn)',fontSize:'16px'}}>{inr(paid)}</b></div>
             <div>Remaining Balance: <b className={bal>0?'err':'ok'} style={{fontSize:'16px'}}>{inr(bal)}</b></div>
             {bal>0&&f.nextDueDate&&(<div>Next Due: <b>{toDmy(f.nextDueDate)}</b></div>)}

@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 export const today=()=>new Date().toISOString().slice(0,10);
 export const inr=n=>'₹'+Number(n||0).toLocaleString('en-IN');
-export const calcNet=(fee,pct)=>Math.round((Number(fee)||0)*(1-(Number(pct)||0)/100)*100)/100;
+export const calcNet=(fee,discount)=>Math.max(0,Math.round(((Number(fee)||0)-(Number(discount)||0))*100)/100);
 export const calcBalance=(net,paid)=>Math.round((net-(Number(paid)||0))*100)/100;
 export const can=(me,k)=>{
   if(!me)return false;
