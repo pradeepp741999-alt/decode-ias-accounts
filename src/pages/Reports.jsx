@@ -7,7 +7,7 @@ export default function Reports({onBack}){
   const [S,setS]=useState([]),[P,setP]=useState([]);
   const [expenses,setExpenses]=useState([]);
   const [disbursements,setDisbursements]=useState([]);
-  // activeReport: null = show report cards menu; 'sum' | 'stu' | 'col' | 'chart' | 'over' | 'expense_split'
+  // activeReport: null = show report cards menu; 'sum' | 'stu' | 'day' | 'col' | 'chart' | 'over' | 'expense_split'
   const [activeReport,setActiveReport]=useState(null);
   const [from,setFrom]=useState('');
   const [to,setTo]=useState('');
@@ -67,17 +67,37 @@ export default function Reports({onBack}){
     'Due Date':toDmy(s.nextDueDate)
   }));
 
-  // 3. Overdue
-  const overdue=st.filter(s=>s.balance>0&&s.nextDueDate&&s.nextDueDate<today())
-    .sort((a,b)=>a.nextDueDate.localeCompare(b.nextDueDate))
-    .map(s=>({
-      'Student Name':s.name,
-      'Mobile Number':s.mobile,
-      'Course':s.courseName,
-      'Pending Due':s.balance,
-      'Due Date':toDmy(s.nextDueDate),
-      'Days Overdue':Math.round((new Date(today())-new Date(s.nextDueDate))/864e5)
-    }));
+  // 3. Day-wise grouping calculation
+  const dayMap = {};
+  pay.forEach(p => {
+    const d = p.date;
+    if (!dayMap[d]) {
+      dayMap[d] = { date: d, cash: 0, online: 0, total: 0, receipts: [], students: new Set() };
+    }
+    const amt = Number(p.amount) || 0;
+    if (p.mode === 'cash') dayMap[d].cash += amt;
+    else dayMap[d].online += amt;
+    dayMap[d].total += amt;
+    const stu = studentMap.get(p.studentId);
+    const mob = (stu && stu.mobile) || p.mobile || '';
+    dayMap[d].students.add(`${p.studentName}${mob ? ` (${mob})` : ''}`);
+    dayMap[d].receipts.push(p);
+  });
+
+  const dayKeys = Object.keys(dayMap).sort((a,b) => b.localeCompare(a));
+  const dayRows = dayKeys.map(d => ({
+    'Date': toDmy(d),
+    'Receipts Count': dayMap[d].receipts.length,
+    'Students (Name & Mobile)': Array.from(dayMap[d].students).join('; '),
+    'Cash Collection': dayMap[d].cash,
+    'Online Collection': dayMap[d].online,
+    'Total Day Collection': dayMap[d].total
+  }));
+
+  const totalDayCash = sum(dayKeys.map(d => dayMap[d].cash));
+  const totalDayOnline = sum(dayKeys.map(d => dayMap[d].online));
+  const totalDayAll = sum(dayKeys.map(d => dayMap[d].total));
+  const totalReceiptsCount = sum(dayKeys.map(d => dayMap[d].receipts.length));
 
   // 4. Collections (Cash / Online)
   const cash=sum(pay.filter(p=>p.mode==='cash').map(p=>p.amount));
@@ -97,7 +117,19 @@ export default function Reports({onBack}){
     };
   });
 
-  const isCurrency=k=>['Total Fee','Collected','Pending','Net Fee','Paid','Pending Due','Amount'].includes(k);
+  // 5. Overdue
+  const overdue=st.filter(s=>s.balance>0&&s.nextDueDate&&s.nextDueDate<today())
+    .sort((a,b)=>a.nextDueDate.localeCompare(b.nextDueDate))
+    .map(s=>({
+      'Student Name':s.name,
+      'Mobile Number':s.mobile,
+      'Course':s.courseName,
+      'Pending Due':s.balance,
+      'Due Date':toDmy(s.nextDueDate),
+      'Days Overdue':Math.round((new Date(today())-new Date(s.nextDueDate))/864e5)
+    }));
+
+  const isCurrency=k=>['Total Fee','Collected','Pending','Net Fee','Paid','Pending Due','Amount','Cash Collection','Online Collection','Total Day Collection'].includes(k);
   const renderCell=(k,v)=>{
     if(typeof v==='number'&&isCurrency(k)) return inr(v);
     if(k==='Mobile Number'&&v&&v!=='-') return <span className="mobile-badge">📞 {v}</span>;
@@ -119,7 +151,7 @@ export default function Reports({onBack}){
           </thead>
           <tbody>
             {rows.map((r,i)=>(
-              <tr key={i} className={r.Course==='TOTAL'?'total':''}>
+              <tr key={i} className={r.Course==='TOTAL'||r.Date==='TOTAL'?'total':''}>
                 {Object.entries(r).map(([k,v],j)=><td key={j}>{renderCell(k,v)}</td>)}
               </tr>
             ))}
@@ -150,9 +182,17 @@ export default function Reports({onBack}){
       badge:`${st.filter(s=>s.balance>0).length} Pending Students`
     },
     {
+      id:'day',
+      icon:'📅',
+      title:'Day-wise Collections',
+      tag:'Daily Income',
+      desc:'Track daily fees collected from students with cash vs online breakdown and student details.',
+      badge:`${dayKeys.length} Days Recorded`
+    },
+    {
       id:'col',
       icon:'💳',
-      title:'Cash / Online',
+      title:'Cash / Online Receipts',
       tag:'Collection Receipts',
       desc:'Complete payment transactions list with student mobile numbers, modes, and transaction IDs.',
       badge:`${pay.length} Receipts`
@@ -347,7 +387,53 @@ export default function Reports({onBack}){
         </div>
       )}
 
-      {/* 3. Cash / Online Collections Report Screen */}
+      {/* ============================================================== */}
+      {/* 3. DAY-WISE COLLECTIONS REPORT SCREEN                          */}
+      {/* ============================================================== */}
+      {activeReport==='day' && (
+        <div>
+          {/* Day-wise KPI Cards */}
+          <div className="grid" style={{marginBottom:'16px'}}>
+            <div className="card kpi" style={{borderLeft:'4px solid var(--navy)'}}>
+              Total Amount Collected
+              <b style={{color:'var(--grn)'}}>{inr(totalDayAll)}</b>
+              <span className="muted" style={{fontSize:'12px'}}>{totalReceiptsCount} receipts across {dayKeys.length} collection days</span>
+            </div>
+            <div className="card kpi" style={{borderLeft:'4px solid #16a34a'}}>
+              Cash vs Online Breakdown
+              <b style={{fontSize:'17px',color:'var(--navy)'}}>Cash: {inr(totalDayCash)}</b>
+              <span className="muted" style={{fontSize:'12px'}}>Online / UPI: <b>{inr(totalDayOnline)}</b></span>
+            </div>
+            <div className="card kpi" style={{borderLeft:'4px solid var(--gold)'}}>
+              Average Collection per Day
+              <b style={{color:'var(--navy)'}}>{inr(dayKeys.length ? Math.round(totalDayAll / dayKeys.length) : 0)}</b>
+              <span className="muted" style={{fontSize:'12px'}}>Based on active payment days</span>
+            </div>
+          </div>
+
+          {/* Day-Wise Summary Table */}
+          <Tbl
+            rows={[
+              ...dayRows,
+              {
+                'Date': 'TOTAL',
+                'Receipts Count': totalReceiptsCount,
+                'Students (Name & Mobile)': `${pay.length} payments total`,
+                'Cash Collection': totalDayCash,
+                'Online Collection': totalDayOnline,
+                'Total Day Collection': totalDayAll
+              }
+            ]}
+            name="day_wise_collection_summary"
+          />
+
+          {/* Detailed Itemized Receipts per Day */}
+          <h4 style={{margin:'24px 0 10px',color:'var(--navy)'}}>📋 All Payment Receipts in Selected Period</h4>
+          <Tbl rows={payRows} name="itemized_daily_receipts"/>
+        </div>
+      )}
+
+      {/* 4. Cash / Online Collections Report Screen */}
       {activeReport==='col' && (
         <div>
           <div className="grid" style={{marginBottom:'16px'}}>
@@ -359,7 +445,7 @@ export default function Reports({onBack}){
         </div>
       )}
 
-      {/* 4. Pending Chart Report Screen */}
+      {/* 5. Pending Chart Report Screen */}
       {activeReport==='chart' && (
         <div className="sub-card">
           <h4 style={{marginBottom:'16px'}}>Pending Amount by Course</h4>
@@ -400,7 +486,7 @@ export default function Reports({onBack}){
         </div>
       )}
 
-      {/* 5. Due Date Crossed (Overdue) Report Screen */}
+      {/* 6. Due Date Crossed (Overdue) Report Screen */}
       {activeReport==='over' && (
         <div>
           <div className="sub-card" style={{marginBottom:'16px',background:'#fff5f5',borderColor:'#f5c6cb'}}>
@@ -412,9 +498,7 @@ export default function Reports({onBack}){
         </div>
       )}
 
-      {/* ============================================================== */}
-      {/* 6. INCOME VS EXPENSES & PETTY CASH SPLIT REPORT                */}
-      {/* ============================================================== */}
+      {/* 7. Income vs Expenses & Petty Cash Split Report */}
       {activeReport==='expense_split' && (
         <div>
           {/* Main Inflow vs Outflow KPI Cards */}

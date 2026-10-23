@@ -141,15 +141,33 @@ export default function Enroll({me,done,onBack}){
         </div>
 
         {/* Sub-card 3: Fee Calculation Summary */}
-        <div className="sub-card" style={{background:'#f6f9fe',border:'1px solid #c8d8f2'}}>
-          <h4>💰 3. Fees Summary</h4>
-          <div style={{display:'flex',gap:'20px',flexWrap:'wrap',alignItems:'center'}}>
-            <div>Base Fee: <b>{inr(fee)}</b></div>
-            {discount > 0 && <div>Discount: <b style={{color:'var(--gold)'}}>-{inr(discount)}</b></div>}
-            <div>Total Net Fee: <b style={{color:'var(--navy)',fontSize:'16px'}}>{inr(net)}</b></div>
-            <div>Paid Now: <b style={{color:'var(--grn)',fontSize:'16px'}}>{inr(paid)}</b></div>
-            <div>Remaining Balance: <b className={bal>0?'err':'ok'} style={{fontSize:'16px'}}>{inr(bal)}</b></div>
-            {bal>0&&f.nextDueDate&&(<div>Next Due: <b>{toDmy(f.nextDueDate)}</b></div>)}
+        <div className="sub-card" style={{border:'2px solid var(--navy)',background:'#ffffff',boxShadow:'0 4px 14px rgba(11,36,71,0.08)'}}>
+          <h4 style={{color:'var(--navy)',borderBottomColor:'var(--navy)'}}>💰 3. Live Fees Calculation</h4>
+          <div className="grid" style={{marginTop:'12px'}}>
+            <div style={{background:'#f8fafc',padding:'12px',borderRadius:'8px',border:'1.5px solid #cbd5e1'}}>
+              <span className="muted" style={{fontSize:'12px',display:'block',fontWeight:600}}>Base Course Fee</span>
+              <b style={{fontSize:'18px',color:'#1e293b'}}>{inr(fee)}</b>
+            </div>
+            {discount > 0 && (
+              <div style={{background:'#fefce8',padding:'12px',borderRadius:'8px',border:'1.5px solid #fef08a'}}>
+                <span style={{fontSize:'12px',display:'block',color:'#854d0e',fontWeight:600}}>Discount Applied</span>
+                <b style={{fontSize:'18px',color:'#ca8a04'}}>-{inr(discount)}</b>
+              </div>
+            )}
+            <div style={{background:'#f0fdf4',padding:'12px',borderRadius:'8px',border:'1.5px solid #bbf7d0'}}>
+              <span style={{fontSize:'12px',display:'block',color:'#166534',fontWeight:600}}>Net Fee (Payable)</span>
+              <b style={{fontSize:'18px',color:'var(--navy)'}}>{inr(net)}</b>
+            </div>
+            <div style={{background:'#f0fdf4',padding:'12px',borderRadius:'8px',border:'1.5px solid #bbf7d0'}}>
+              <span style={{fontSize:'12px',display:'block',color:'#166534',fontWeight:600}}>Paid Now</span>
+              <b style={{fontSize:'18px',color:'var(--grn)'}}>{inr(paid)}</b>
+            </div>
+            <div style={{background:bal>0?'#fff5f5':'#f0fdf4',padding:'12px',borderRadius:'8px',border:`1.5px solid ${bal>0?'#fecaca':'#bbf7d0'}`}}>
+              <span style={{fontSize:'12px',display:'block',color:bal>0?'#991b1b':'#166534',fontWeight:600}}>
+                Remaining Balance {bal>0&&f.nextDueDate?`(Due: ${toDmy(f.nextDueDate)})`:''}
+              </span>
+              <b style={{fontSize:'18px',color:bal>0?'var(--red)':'var(--grn)'}}>{inr(bal)}</b>
+            </div>
           </div>
         </div>
 
