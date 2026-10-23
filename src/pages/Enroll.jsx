@@ -1,13 +1,27 @@
 import {useEffect,useState} from 'react';
 import {collection,doc,getDocs,serverTimestamp,writeBatch} from 'firebase/firestore';
-import {db} from '../firebase';import {today,calcNet,calcBalance,inr} from '../util';import {printReceipt} from '../receipt';
+import {db} from '../firebase';
+import {today,calcNet,calcBalance,inr,toDmy} from '../util';
+import {printReceipt} from '../receipt';
+
 const blank={date:today(),name:'',fatherName:'',mobile:'',courseId:'',discountPct:0,mode:'cash',paid:'',transId:'',nextDueDate:'',remarks:''};
-export default function Enroll({me,done}){
-  const [courses,setCourses]=useState([]),[f,setF]=useState(blank),[err,setErr]=useState(''),[busy,setBusy]=useState(false);
-  useEffect(()=>{getDocs(collection(db,'courses')).then(s=>setCourses(s.docs.map(d=>({id:d.id,...d.data()})).filter(c=>c.active)));},[]);
+
+export default function Enroll({me,done,onBack}){
+  const [courses,setCourses]=useState([]);
+  const [f,setF]=useState(blank);
+  const [err,setErr]=useState('');
+  const [busy,setBusy]=useState(false);
+
+  useEffect(()=>{
+    getDocs(collection(db,'courses')).then(s=>setCourses(s.docs.map(d=>({id:d.id,...d.data()})).filter(c=>c.active)));
+  },[]);
+
   const set=k=>e=>setF({...f,[k]:e.target.value});
   const c=courses.find(x=>x.id===f.courseId),fee=c?.fee||0,net=calcNet(fee,f.discountPct),paid=Number(f.paid)||0,bal=calcBalance(net,paid);
-  const save=async e=>{e.preventDefault();setErr('');
+
+  const save=async e=>{
+    e.preventDefault();
+    setErr('');
     if(!c)return setErr('Select a course.');
     if(paid<=0)return setErr('Enter the amount paid now.');
     if(paid>net)return setErr('Paid amount is more than the net fee.');
@@ -25,23 +39,83 @@ export default function Enroll({me,done}){
       await b.commit();
       printReceipt({...s,amount:paid,mode:f.mode,transId:f.transId,date:f.date});
       setF(blank);done&&done();
-    }catch(x){setErr('Save failed: '+x.message);}setBusy(false);};
-  return <form className="card" onSubmit={save}><h2>New student – fees entry</h2>
-    <div className="grid2">
-      <label>Date<input type="date" value={f.date} onChange={set('date')} required/></label>
-      <label>Student name<input value={f.name} onChange={set('name')} required/></label>
-      <label>Father name<input value={f.fatherName} onChange={set('fatherName')} required/></label>
-      <label>Mobile<input value={f.mobile} onChange={set('mobile')} pattern="[0-9]{10}" title="10 digit mobile" required/></label>
-      <label>Course<select value={f.courseId} onChange={set('courseId')} required><option value="">Select</option>
-        {courses.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
-      <label>Course fee<input value={fee} readOnly/></label>
-      <label>Discount %<input type="number" min="0" max="100" value={f.discountPct} onChange={set('discountPct')}/></label>
-      <label>Payment mode<select value={f.mode} onChange={set('mode')}><option value="cash">Cash</option><option value="online">Online</option></select></label>
-      <label>Amount paid now<input type="number" min="1" value={f.paid} onChange={set('paid')} required/></label>
-      {f.mode==='online'&&<label>Transaction ID *<input value={f.transId} onChange={set('transId')}/></label>}
-      <label>Next due date (for remaining)<input type="date" value={f.nextDueDate} onChange={set('nextDueDate')}/></label>
-      <label>Remarks<input value={f.remarks} onChange={set('remarks')}/></label>
+    }catch(x){setErr('Save failed: '+x.message);}
+    setBusy(false);
+  };
+
+  return (
+    <div className="parent-card">
+      <div className="parent-card-header">
+        <div>
+          <h2>📝 Student Fees Entry</h2>
+          <p className="muted" style={{margin:'4px 0 0',fontSize:'13px'}}>
+            Enrol new admission, register first installment, and generate receipt
+          </p>
+        </div>
+        <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+          {onBack && <button type="button" className="btn sm outline" onClick={onBack}>← Back to Dashboard Hub</button>}
+          <span className="badge">New Admission</span>
+        </div>
+      </div>
+
+      <form onSubmit={save}>
+        {/* Sub-card 1: Student Information */}
+        <div className="sub-card">
+          <h4>👤 1. Student & Course Information</h4>
+          <div className="grid2">
+            <label>Admission Date (dd-mm-yyyy)<input type="date" value={f.date} onChange={set('date')} required/></label>
+            <label>Student Full Name<input value={f.name} onChange={set('name')} placeholder="e.g. Ramesh Kumar" required/></label>
+            <label>Father's Name<input value={f.fatherName} onChange={set('fatherName')} placeholder="e.g. P. Kumar" required/></label>
+            <label>Mobile Number (10 digits)<input value={f.mobile} onChange={set('mobile')} pattern="[0-9]{10}" title="10 digit mobile" placeholder="e.g. 9876543210" required/></label>
+            <label>Course Name
+              <select value={f.courseId} onChange={set('courseId')} required>
+                <option value="">Select Course</option>
+                {courses.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+            </label>
+            <label>Base Course Fee<input value={fee?inr(fee):'Select a course'} readOnly style={{background:'#edf2f7',fontWeight:600}}/></label>
+            <label>Discount %<input type="number" min="0" max="100" value={f.discountPct} onChange={set('discountPct')}/></label>
+          </div>
+        </div>
+
+        {/* Sub-card 2: Payment Details */}
+        <div className="sub-card">
+          <h4>💳 2. Payment & Due Details</h4>
+          <div className="grid2">
+            <label>Payment Mode
+              <select value={f.mode} onChange={set('mode')}>
+                <option value="cash">Cash</option>
+                <option value="online">Online (UPI / Bank Transfer)</option>
+              </select>
+            </label>
+            <label>Amount Paid Now<input type="number" min="1" value={f.paid} onChange={set('paid')} placeholder="Enter amount" required/></label>
+            {f.mode==='online' && (
+              <label>Transaction ID *<input value={f.transId} onChange={set('transId')} placeholder="e.g. UPI / UTR number" required/></label>
+            )}
+            <label>Next Due Date (for balance)<input type="date" value={f.nextDueDate} onChange={set('nextDueDate')}/></label>
+            <label>Remarks / Notes<input value={f.remarks} onChange={set('remarks')} placeholder="Optional notes"/></label>
+          </div>
+        </div>
+
+        {/* Sub-card 3: Fee Calculation Summary */}
+        <div className="sub-card" style={{background:'#f6f9fe',border:'1px solid #c8d8f2'}}>
+          <h4>💰 3. Fees Summary</h4>
+          <div style={{display:'flex',gap:'20px',flexWrap:'wrap',alignItems:'center'}}>
+            <div>Net Fee: <b style={{color:'var(--navy)',fontSize:'16px'}}>{inr(net)}</b></div>
+            <div>Paid Now: <b style={{color:'var(--grn)',fontSize:'16px'}}>{inr(paid)}</b></div>
+            <div>Remaining Balance: <b className={bal>0?'err':'ok'} style={{fontSize:'16px'}}>{inr(bal)}</b></div>
+            {bal>0&&f.nextDueDate&&(<div>Next Due: <b>{toDmy(f.nextDueDate)}</b></div>)}
+          </div>
+        </div>
+
+        {err && <div className="err" style={{background:'#fdeeed',padding:'10px 14px',borderRadius:'6px',border:'1px solid #f5c2c7'}}>{err}</div>}
+
+        <div style={{marginTop:'16px',display:'flex',gap:'10px'}}>
+          <button className="btn gold" disabled={busy} style={{padding:'12px 24px',fontSize:'15px'}}>
+            {busy?'Saving…':'💾 Save Entry & Print Receipt'}
+          </button>
+        </div>
+      </form>
     </div>
-    <p><b>Total fee after discount: {inr(net)}</b> &nbsp; Paid: {inr(paid)} &nbsp; <span className={bal>0?'err':'ok'}>Remaining: {inr(bal)}</span></p>
-    {err&&<div className="err">{err}</div>}<button className="btn gold" disabled={busy}>{busy?'Saving…':'Save & print receipt'}</button></form>;
+  );
 }
