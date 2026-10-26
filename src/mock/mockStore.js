@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'decode_ias_mock_db_v2';
+const STORAGE_KEY = 'decode_ias_mock_db_v3';
 const CURRENT_USER_KEY = 'decode_ias_mock_user';
 
 const INITIAL_DATA = {
@@ -6,6 +6,7 @@ const INITIAL_DATA = {
     'u_admin': { id: 'u_admin', uid: 'u_admin', name: 'Super Admin', username: 'admin', role: 'super_admin', active: true, password: 'ChangeMe@123' },
     'u_fees': { id: 'u_fees', uid: 'u_fees', name: 'Kavitha R', username: 'fees', role: 'fees', active: true, password: 'ChangeMe@123' },
     'u_reports': { id: 'u_reports', uid: 'u_reports', name: 'Suresh Babu', username: 'reports', role: 'reports', active: true, password: 'ChangeMe@123' },
+    'u_expense': { id: 'u_expense', uid: 'u_expense', name: 'Anand Kumar (Accounts)', username: 'expense', role: 'expense', active: true, password: 'ChangeMe@123' },
     'u_both': { id: 'u_both', uid: 'u_both', name: 'Divya M', username: 'both', role: 'both', active: true, password: 'ChangeMe@123' },
     'u_petty': { id: 'u_petty', uid: 'u_petty', name: 'Raju (Office Staff)', username: 'petty', role: 'petty_cash', active: true, password: 'ChangeMe@123' },
   },
@@ -64,26 +65,97 @@ const INITIAL_DATA = {
     'ei_6': { id: 'ei_6', name: 'Internet & Telephone', active: true },
     'ei_7': { id: 'ei_7', name: 'Repairs & Maintenance', active: true },
     'ei_8': { id: 'ei_8', name: 'Courier & Postal', active: true },
+    'ei_9': { id: 'ei_9', name: 'Car Petrol / Fuel (Office Vehicle)', active: true },
+    'ei_10': { id: 'ei_10', name: 'Classroom Cleaning & Maintenance', active: true },
+  },
+  pettyCashCycles: {
+    'pcc_1': {
+      id: 'pcc_1',
+      cycleNumber: 1,
+      startDate: '2026-10-01',
+      endDate: '2026-10-26',
+      imprestAmount: 20000,
+      custodianName: 'Raju (Office Staff)',
+      givenBy: 'Super Admin',
+      mode: 'cash',
+      totalSpent: 18500,
+      returnedAmount: 1500,
+      returnedDate: '2026-10-26',
+      returnedTo: 'Super Admin',
+      status: 'closed',
+      closingRemarks: 'Returned remaining balance ₹1,500. Settled before fresh ₹20k float for car petrol & travel.',
+      createdAt: '2026-10-01T09:00:00.000Z',
+      closedAt: '2026-10-26T10:30:00.000Z'
+    },
+    'pcc_2': {
+      id: 'pcc_2',
+      cycleNumber: 2,
+      startDate: '2026-10-26',
+      endDate: '',
+      imprestAmount: 20000,
+      custodianName: 'Raju (Office Staff)',
+      givenBy: 'Super Admin',
+      mode: 'cash',
+      totalSpent: 4000,
+      returnedAmount: 0,
+      returnedDate: '',
+      returnedTo: '',
+      status: 'active',
+      closingRemarks: '',
+      createdAt: '2026-10-26T10:35:00.000Z'
+    }
+  },
+  pettyCashReturns: {
+    'pcr_1': {
+      id: 'pcr_1',
+      cycleId: 'pcc_1',
+      cycleNumber: 1,
+      date: '2026-10-26',
+      amount: 1500,
+      returnedBy: 'Raju (Office Staff)',
+      receivedBy: 'Super Admin',
+      remarks: 'Returned remaining balance of ₹1,500 to Admin before fresh ₹20,000 float issuance',
+      createdAt: '2026-10-26T10:30:00.000Z'
+    }
   },
   pettyCashDisbursements: {
-    'pc_1': { id: 'pc_1', date: '2026-10-01', amount: 5000, givenTo: 'Raju (Office Staff)', givenBy: 'Super Admin', mode: 'cash', remarks: 'Monthly initial petty cash advance', createdAt: '2026-10-01T09:00:00.000Z' },
-    'pc_2': { id: 'pc_2', date: '2026-10-15', amount: 3000, givenTo: 'Raju (Office Staff)', givenBy: 'Super Admin', mode: 'online', remarks: 'Mid-month top-up for stationery and refreshments', createdAt: '2026-10-15T10:00:00.000Z' },
+    'pc_1': { id: 'pc_1', cycleId: 'pcc_1', cycleNumber: 1, date: '2026-10-01', amount: 20000, givenTo: 'Raju (Office Staff)', givenBy: 'Super Admin', mode: 'cash', remarks: 'Monthly Imprest float of ₹20,000 given to Office Boy', createdAt: '2026-10-01T09:00:00.000Z' },
+    'pc_2': { id: 'pc_2', cycleId: 'pcc_2', cycleNumber: 2, date: '2026-10-26', amount: 20000, givenTo: 'Raju (Office Staff)', givenBy: 'Super Admin', mode: 'cash', remarks: 'Re-issued fresh Imprest float of ₹20,000 for next cycle', createdAt: '2026-10-26T10:35:00.000Z' },
   },
   expenses: {
     'ex_1': { id: 'ex_1', itemId: 'ei_2', itemName: 'Room Rent (Premises)', date: '2026-10-02', amount: 25000, mode: 'online', isPettyCash: false, paidTo: 'Property Owner (Building)', attachmentName: 'rent_agreement_oct.pdf', remarks: 'October 2026 Academy premises rent', createdBy: 'Super Admin', createdAt: '2026-10-02T11:00:00.000Z' },
     'ex_2': { id: 'ex_2', itemId: 'ei_1', itemName: 'EB Bill (Electricity)', date: '2026-10-08', amount: 4850, mode: 'online', isPettyCash: false, paidTo: 'TNEB Electricity Board', attachmentName: 'tneb_bill_oct.pdf', remarks: 'EB Consumer No 04-123-4567 paid via Net Banking', createdBy: 'Super Admin', createdAt: '2026-10-08T14:30:00.000Z' },
-    'ex_3': { id: 'ex_3', itemId: 'ei_3', itemName: 'Water Can / Water Bill', date: '2026-10-09', amount: 650, mode: 'petty_cash', isPettyCash: true, paidTo: 'Balaji Water Suppliers', attachmentName: 'water_slip_09oct.jpg', remarks: '15 water cans for classrooms and staff room', createdBy: 'Raju (Office Staff)', createdAt: '2026-10-09T16:00:00.000Z' },
-    'ex_4': { id: 'ex_4', itemId: 'ei_4', itemName: 'Tea & Refreshments', date: '2026-10-12', amount: 480, mode: 'petty_cash', isPettyCash: true, paidTo: 'Anand Tea Stall', attachmentName: 'tea_bill.jpg', remarks: 'Weekly faculty and visitor refreshments', createdBy: 'Raju (Office Staff)', createdAt: '2026-10-12T17:15:00.000Z' },
-    'ex_5': { id: 'ex_5', itemId: 'ei_5', itemName: 'Office Stationery & Printing', date: '2026-10-16', amount: 1250, mode: 'petty_cash', isPettyCash: true, paidTo: 'Sri Ram Xerox & Stationery', attachmentName: 'xerox_bill_16oct.pdf', remarks: 'A4 paper bundles and exam test papers photocopy', createdBy: 'Raju (Office Staff)', createdAt: '2026-10-16T12:00:00.000Z' },
     'ex_6': { id: 'ex_6', itemId: 'ei_6', itemName: 'Internet & Telephone', date: '2026-10-17', amount: 1499, mode: 'online', isPettyCash: false, paidTo: 'Airtel Broadband', attachmentName: 'airtel_bill_oct.pdf', remarks: '300 Mbps fiber internet monthly bill', createdBy: 'Super Admin', createdAt: '2026-10-17T15:20:00.000Z' },
-    'ex_7': { id: 'ex_7', itemId: 'ei_8', itemName: 'Courier & Postal', date: '2026-10-19', amount: 220, mode: 'petty_cash', isPettyCash: true, paidTo: 'DTDC Courier Service', attachmentName: 'courier_receipt.jpg', remarks: 'Study materials dispatched to distance student', createdBy: 'Raju (Office Staff)', createdAt: '2026-10-19T11:45:00.000Z' },
+
+    // Cycle #1 Petty Cash Expenses (Total = ₹18,500; Leftover = ₹1,500 returned)
+    'ex_3': { id: 'ex_3', cycleId: 'pcc_1', cycleNumber: 1, itemId: 'ei_3', itemName: 'Water Can / Water Bill', date: '2026-10-03', amount: 850, mode: 'petty_cash', isPettyCash: true, paidTo: 'Balaji Water Suppliers', attachmentName: 'water_slip_03oct.jpg', remarks: '20 water cans for classrooms and staff room', createdBy: 'Raju (Office Staff)', createdAt: '2026-10-03T16:00:00.000Z' },
+    'ex_4': { id: 'ex_4', cycleId: 'pcc_1', cycleNumber: 1, itemId: 'ei_4', itemName: 'Tea & Refreshments', date: '2026-10-06', amount: 1450, mode: 'petty_cash', isPettyCash: true, paidTo: 'Anand Tea Stall', attachmentName: 'tea_bill.jpg', remarks: 'Weekly faculty and visitor refreshments', createdBy: 'Raju (Office Staff)', createdAt: '2026-10-06T17:15:00.000Z' },
+    'ex_clean': { id: 'ex_clean', cycleId: 'pcc_1', cycleNumber: 1, itemId: 'ei_10', itemName: 'Classroom Cleaning & Maintenance', date: '2026-10-10', amount: 920, mode: 'petty_cash', isPettyCash: true, paidTo: 'Selvam General Stores', attachmentName: 'cleaning_bill.jpg', remarks: 'Floor cleaner, disinfectant phenyl, brooms', createdBy: 'Raju (Office Staff)', createdAt: '2026-10-10T11:00:00.000Z' },
+    'ex_5': { id: 'ex_5', cycleId: 'pcc_1', cycleNumber: 1, itemId: 'ei_5', itemName: 'Office Stationery & Printing', date: '2026-10-14', amount: 6800, mode: 'petty_cash', isPettyCash: true, paidTo: 'Sri Ram Xerox & Stationery', attachmentName: 'xerox_bill_14oct.pdf', remarks: 'A4 paper bundles and test series question paper photocopy', createdBy: 'Raju (Office Staff)', createdAt: '2026-10-14T12:00:00.000Z' },
+    'ex_7': { id: 'ex_7', cycleId: 'pcc_1', cycleNumber: 1, itemId: 'ei_8', itemName: 'Courier & Postal', date: '2026-10-18', amount: 1180, mode: 'petty_cash', isPettyCash: true, paidTo: 'DTDC Courier Service', attachmentName: 'courier_receipt.jpg', remarks: 'Postal study material dispatched to outstation candidates', createdBy: 'Raju (Office Staff)', createdAt: '2026-10-18T11:45:00.000Z' },
+    'ex_repair': { id: 'ex_repair', cycleId: 'pcc_1', cycleNumber: 1, itemId: 'ei_7', itemName: 'Repairs & Maintenance', date: '2026-10-21', amount: 1300, mode: 'petty_cash', isPettyCash: true, paidTo: 'Murugan Electricals', attachmentName: 'light_bill.jpg', remarks: 'Hall tube light starter and LED batten replacement', createdBy: 'Raju (Office Staff)', createdAt: '2026-10-21T15:00:00.000Z' },
+    'ex_snack': { id: 'ex_snack', cycleId: 'pcc_1', cycleNumber: 1, itemId: 'ei_4', itemName: 'Tea & Refreshments', date: '2026-10-24', amount: 6000, mode: 'petty_cash', isPettyCash: true, paidTo: 'Saravana Bhavan Hotel', attachmentName: 'catering_bill.pdf', remarks: 'Guest lecture seminar tea, snacks & lunch for 60 participants', createdBy: 'Raju (Office Staff)', createdAt: '2026-10-24T18:00:00.000Z' },
+
+    // Cycle #2 Petty Cash Expenses (Fresh ₹20,000 float given on 26/10/2026; ₹4,000 spent; ₹16,000 balance in hand)
+    'ex_petrol': { id: 'ex_petrol', cycleId: 'pcc_2', cycleNumber: 2, itemId: 'ei_9', itemName: 'Car Petrol / Fuel (Office Vehicle)', date: '2026-10-26', amount: 4000, mode: 'petty_cash', isPettyCash: true, paidTo: 'HP Petrol Bunk', attachmentName: 'petrol_bill_4000.jpg', remarks: 'Car petrol full tank for academy inspection visit', createdBy: 'Raju (Office Staff)', createdAt: '2026-10-26T11:00:00.000Z' },
   }
 };
 
 function loadStore() {
   try {
     const raw = typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_KEY) : null;
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Ensure pettyCashCycles & pettyCashReturns exist in parsed data
+      if (!parsed.pettyCashCycles || Object.keys(parsed.pettyCashCycles).length === 0) {
+        parsed.pettyCashCycles = JSON.parse(JSON.stringify(INITIAL_DATA.pettyCashCycles));
+        parsed.pettyCashReturns = JSON.parse(JSON.stringify(INITIAL_DATA.pettyCashReturns));
+        parsed.expenseItems = { ...INITIAL_DATA.expenseItems, ...parsed.expenseItems };
+        parsed.expenses = { ...INITIAL_DATA.expenses, ...parsed.expenses };
+        saveStore(parsed);
+      }
+      return parsed;
+    }
   } catch (err) {
     console.warn('Failed to load mock data from localStorage:', err);
   }

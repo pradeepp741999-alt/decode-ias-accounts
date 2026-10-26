@@ -7,6 +7,8 @@ export default function Reports({onBack}){
   const [S,setS]=useState([]),[P,setP]=useState([]);
   const [expenses,setExpenses]=useState([]);
   const [disbursements,setDisbursements]=useState([]);
+  const [cycles,setCycles]=useState([]);
+  const [returns,setReturns]=useState([]);
   // activeReport: null = show report cards menu; 'sum' | 'stu' | 'day' | 'col' | 'chart' | 'over' | 'expense_split'
   const [activeReport,setActiveReport]=useState(null);
   const [from,setFrom]=useState('');
@@ -18,6 +20,8 @@ export default function Reports({onBack}){
     getDocs(collection(db,'payments')).then(r=>setP(r.docs.map(d=>({id:d.id,...d.data()}))));
     getDocs(collection(db,'expenses')).then(r=>setExpenses(r.docs.map(d=>({id:d.id,...d.data()}))));
     getDocs(collection(db,'pettyCashDisbursements')).then(r=>setDisbursements(r.docs.map(d=>({id:d.id,...d.data()}))));
+    getDocs(collection(db,'pettyCashCycles')).then(r=>setCycles(r.docs.map(d=>({id:d.id,...d.data()}))));
+    getDocs(collection(db,'pettyCashReturns')).then(r=>setReturns(r.docs.map(d=>({id:d.id,...d.data()}))));
   },[]);
 
   // Lookup map for student details by studentId
@@ -540,9 +544,37 @@ export default function Reports({onBack}){
               </div>
             </div>
             <p className="muted" style={{margin:0,fontSize:'12px'}}>
-              * Displays how much advance cash management gave to the office boy vs itemized micro-expenses spent (tea, water cans, stationery, courier) vs remaining balance.
+              * Fixed Imprest system: ₹20,000 float given to office boy. Daily micro-expenses deducted. Leftover balance returned to Admin and fresh ₹20,000 re-issued.
             </p>
           </div>
+
+          {/* Petty Cash Imprest Cycles Audit Summary Table */}
+          {cycles.length > 0 && (
+            <div style={{marginBottom:'24px'}}>
+              <h4 style={{margin:'0 0 8px',color:'var(--navy)'}}>🪙 Petty Cash Imprest Cycles Reconciliation History</h4>
+              <Tbl
+                rows={[...cycles].sort((a,b)=>(b.cycleNumber||0)-(a.cycleNumber||0)).map(c=>{
+                  const cycleVouchers = expenses.filter(e => e.cycleId === c.id || (!e.cycleId && e.date >= c.startDate && (!c.endDate || e.date <= c.endDate)));
+                  const cycleSpent = sum(cycleVouchers.map(v=>Number(v.amount)||0));
+                  const returned = Number(c.returnedAmount || 0);
+                  const floatAmt = Number(c.imprestAmount || 0);
+                  const isClosed = c.status === 'closed';
+                  const discrepancy = isClosed ? (floatAmt - (cycleSpent + returned)) : 0;
+                  return {
+                    'Cycle': `#${c.cycleNumber}`,
+                    'Period': `${toDmy(c.startDate)} to ${c.endDate ? toDmy(c.endDate) : 'Active'}`,
+                    'Custodian': c.custodianName,
+                    'Imprest Given': floatAmt,
+                    'Vouchers Spent': cycleSpent,
+                    'Returned to Admin': returned,
+                    'Audit Discrepancy': isClosed ? (discrepancy === 0 ? '✅ Balanced (₹0)' : `Discrepancy (₹${discrepancy})`) : 'Running',
+                    'Status': isClosed ? 'SETTLED & CLOSED' : `ACTIVE (${inr(floatAmt - cycleSpent)} in hand)`
+                  };
+                })}
+                name="petty_cash_imprest_cycles_reconciliation"
+              />
+            </div>
+          )}
 
           {/* Itemized Petty Cash Spent Table */}
           <h4 style={{margin:'16px 0 8px',color:'var(--navy)'}}>🚩 Office Boy Petty Cash Vouchers Breakdown</h4>

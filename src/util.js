@@ -6,11 +6,12 @@ export const calcBalance=(net,paid)=>Math.round((net-(Number(paid)||0))*100)/100
 export const can=(me,k)=>{
   if(!me)return false;
   if(me.role==='super_admin')return true;
-  if(k==='expense')return true;
-  if(me.role==='both')return k==='fees'||k==='reports'||k==='expense'||k==='petty_cash';
-  if(me.role==='fees')return k==='fees'||k==='expense';
-  if(me.role==='reports')return k==='reports'||k==='expense';
-  if(me.role==='petty_cash')return k==='expense'||k==='petty_cash';
+  if(k==='fees')return me.role==='fees'||me.role==='both';
+  if(k==='reports')return me.role==='reports'||me.role==='both';
+  if(k==='expense')return me.role==='expense'||me.role==='reports'||me.role==='petty_cash'||me.role==='both';
+  if(k==='expense_entry')return me.role==='expense'||me.role==='super_admin'||me.role==='both';
+  if(k==='petty_cash')return me.role==='petty_cash'||me.role==='expense'||me.role==='reports'||me.role==='both';
+  if(k==='petty_cash_disburse')return me.role==='expense'||me.role==='super_admin'||me.role==='both';
   return me.role===k;
 };
 export const toDmy=(d)=>{

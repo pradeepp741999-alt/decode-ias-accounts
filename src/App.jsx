@@ -33,9 +33,10 @@ function Login(){
             <div style={{display:'flex',gap:'4px',flexWrap:'wrap'}}>
               <button type="button" className="btn sm" onClick={()=>quickFill('admin')} title="Super Admin role">admin</button>
               <button type="button" className="btn sm" onClick={()=>quickFill('fees')} title="Fees entry role">fees</button>
-              <button type="button" className="btn sm" onClick={()=>quickFill('reports')} title="Reports role">reports</button>
-              <button type="button" className="btn sm" onClick={()=>quickFill('both')} title="Both fees + reports">both</button>
+              <button type="button" className="btn sm" onClick={()=>quickFill('reports')} title="Reports role (Fees & Expense)">reports</button>
+              <button type="button" className="btn sm" onClick={()=>quickFill('expense')} title="General Expense Manager role">expense</button>
               <button type="button" className="btn sm" onClick={()=>quickFill('petty')} title="Office Boy / Petty cash role">petty</button>
+              <button type="button" className="btn sm" onClick={()=>quickFill('both')} title="Both fees + reports">both</button>
             </div>
           </div>
         )}
@@ -52,6 +53,7 @@ function DashboardHub({me, onSelect}){
   // Rights-based module cards
   const canFees = can(me, 'fees');
   const canReports = can(me, 'reports');
+  const canExpense = can(me, 'expense');
   const isAdmin = me.role === 'super_admin';
 
   const cards = [
@@ -72,16 +74,16 @@ function DashboardHub({me, onSelect}){
     canReports && {
       id: 'reports',
       icon: '📊',
-      title: 'Records',
+      title: 'Records & Reports',
       tag: 'Financial Reports',
-      desc: 'Summary & course-wise breakdown, student pending list with mobile numbers, cash/online collection logs, charts, and overdue tracking.'
+      desc: 'Summary & course-wise breakdown, student pending list with mobile numbers, daily collection log, cash/online logs, charts, and overdue tracking.'
     },
-    {
+    canExpense && {
       id: 'expense',
       icon: '🧾',
-      title: 'General Expense',
-      tag: 'Debits & Petty Cash',
-      desc: 'Record daily institutional debit payouts (EB bill, room rent, water bill), manage items, and track office boy petty cash.'
+      title: 'General Expense & Petty Cash',
+      tag: 'Debits & Imprest Cycles',
+      desc: 'Manage institutional debit payouts (EB bill, room rent, water bill), expense items, and office boy petty cash cycles (₹20,000 float, daily spendings, return & re-issue).'
     },
     isAdmin && {
       id: 'admin',
@@ -144,7 +146,9 @@ export default function App(){
   }),[]);
 
   const handleResetData = () => {
-    if (window.confirm('Reset mock database to initial sample data?')) {
+    if (window.confirm('Reset mock database to initial sample data with petty cash cycles?')) {
+      window.localStorage.removeItem('decode_ias_mock_db_v3');
+      window.localStorage.removeItem('decode_ias_mock_db_v2');
       window.localStorage.removeItem('decode_ias_mock_db_v1');
       window.location.reload();
     }
@@ -158,8 +162,8 @@ export default function App(){
     ['hub','🏠 Dashboard Hub'],
     can(me,'fees')&&['enroll','New Student'],
     can(me,'fees')&&['dash','Fees Management'],
-    can(me,'reports')&&['reports','Records'],
-    ['expense','General Expense'],
+    can(me,'reports')&&['reports','Records & Reports'],
+    can(me,'expense')&&['expense','General Expense & Petty Cash'],
     me.role==='super_admin'&&['admin','Admin']
   ].filter(Boolean);
 

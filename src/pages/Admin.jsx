@@ -5,7 +5,14 @@ import {addDoc,collection,doc,getDocs,setDoc,updateDoc} from 'firebase/firestore
 import {cfg,db,emailOf} from '../firebase';
 import {inr} from '../util';
 
-const ROLES=[['fees','Fees entry'],['reports','Payment reports'],['both','Fees + reports'],['petty_cash','Petty Cash / Office Staff'],['super_admin','Super admin']];
+const ROLES=[
+  ['fees','Fees entry & admissions'],
+  ['reports','Payment & Expense reports'],
+  ['both','Fees + Reports'],
+  ['expense','General Expense & Petty Cash Manager'],
+  ['petty_cash','Office Staff / Petty Cash Custodian'],
+  ['super_admin','Super admin (Full access)']
+];
 
 export default function Admin({onBack}){
   const [U,setU]=useState([]),[C,setC]=useState([]);
