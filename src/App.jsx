@@ -80,10 +80,12 @@ function DashboardHub({me, onSelect}){
     },
     canExpense && {
       id: 'expense',
-      icon: '🧾',
-      title: 'General Expense & Petty Cash',
-      tag: 'Debits & Imprest Cycles',
-      desc: 'Manage institutional debit payouts (EB bill, room rent, water bill), expense items, and office boy petty cash cycles (₹20,000 float, daily spendings, return & re-issue).'
+      icon: '🪙',
+      title: me.role === 'petty_cash' ? 'Petty Cash' : 'General Expense & Petty Cash',
+      tag: me.role === 'petty_cash' ? 'Daily Vouchers & Cycles' : 'Debits & Imprest Cycles',
+      desc: me.role === 'petty_cash'
+        ? 'Record daily petty cash vouchers (cash/online) and inspect Petty Cash Imprest cycles audit report.'
+        : 'Manage institutional debit payouts (EB bill, room rent, water bill), expense items, and office boy petty cash cycles (₹20,000 float, daily spendings, return & re-issue).'
     },
     isAdmin && {
       id: 'admin',
@@ -163,7 +165,7 @@ export default function App(){
     can(me,'fees')&&['enroll','New Student'],
     can(me,'fees')&&['dash','Fees Management'],
     can(me,'reports')&&['reports','Records & Reports'],
-    can(me,'expense')&&['expense','General Expense & Petty Cash'],
+    can(me,'expense')&&['expense', me.role === 'petty_cash' ? 'Petty Cash' : 'General Expense & Petty Cash'],
     me.role==='super_admin'&&['admin','Admin']
   ].filter(Boolean);
 

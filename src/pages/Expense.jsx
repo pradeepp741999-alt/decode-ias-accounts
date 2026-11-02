@@ -47,6 +47,7 @@ export default function Expense({me, onBack}){
     itemId:'',
     date:today(),
     amount:'',
+    mode:'cash',
     paidTo:'',
     attachmentName:'',
     remarks:''
@@ -230,7 +231,7 @@ export default function Expense({me, onBack}){
         itemName: selectedItem ? selectedItem.name : 'Petty Expense',
         date: voucherForm.date,
         amount: amt,
-        mode: 'petty_cash',
+        mode: voucherForm.mode || 'cash',
         isPettyCash: true,
         cycleId: activeCycle.id,
         cycleNumber: activeCycle.cycleNumber || 1,
@@ -247,11 +248,12 @@ export default function Expense({me, onBack}){
         totalSpent: newTotalSpent
       });
 
-      setMsg(`Petty cash voucher of ${inr(amt)} for ${selectedItem?.name} recorded! Remaining in hand: ${inr(activeCycleBalanceInHand - amt)}.`);
+      setMsg(`Petty cash voucher of ${inr(amt)} (${(voucherForm.mode||'cash').toUpperCase()}) for ${selectedItem?.name} recorded! Remaining in hand: ${inr(activeCycleBalanceInHand - amt)}.`);
       setVoucherForm({
         itemId:'',
         date:today(),
         amount:'',
+        mode:'cash',
         paidTo:'',
         attachmentName:'',
         remarks:''
@@ -433,26 +435,21 @@ export default function Expense({me, onBack}){
   // Filtering for Petty Cash Cycles
   const sortedCycles = [...cycles].sort((a,b) => (b.cycleNumber || 0) - (a.cycleNumber || 0));
 
-  const exportPettyCyclesLog = ()=>{
-    const rows = sortedCycles.map(c => {
-      const cycleSpent = sum(pettyExpenses.filter(e => e.cycleId === c.id || (!e.cycleId && e.date >= c.startDate && (!c.endDate || e.date <= c.endDate))));
-      const returned = Number(c.returnedAmount || 0);
-      const floatAmt = Number(c.imprestAmount || 0);
-      const variance = c.status === 'closed' ? (floatAmt - (cycleSpent + returned)) : 0;
-      return {
-        'Cycle No': `#${c.cycleNumber}`,
-        'Start Date': toDmy(c.startDate),
-        'End / Return Date': c.endDate ? toDmy(c.endDate) : 'Active / Running',
-        'Custodian': c.custodianName,
-        'Float Given (₹)': floatAmt,
-        'Total Vouchers Spent (₹)': cycleSpent,
-        'Balance Returned to Admin (₹)': returned,
-        'Audit Variance (₹)': variance === 0 ? 'Balanced (₹0)' : `Discrepancy (₹${variance})`,
-        'Cycle Status': c.status === 'closed' ? 'SETTLED & CLOSED' : `ACTIVE (₹${floatAmt - cycleSpent} in hand)`,
-        'Closing Remarks': c.closingRemarks || '-'
-      };
-    });
-    exportXlsx(rows, 'Petty_Cash_Imprest_Cycles_Audit');
+  // Export vouchers of a specific cycle
+  const exportSelectedCycleVouchers = (cycleData)=>{
+    const data = cycleData || selectedCycleVouchers;
+    if(!data) return;
+    const cycleNum = data.cycle?.cycleNumber || 1;
+    const rows = (data.vouchers || []).map(v => ({
+      'Date': toDmy(v.date),
+      'Item / Category': v.itemName,
+      'Amount': v.amount,
+      'Payment Mode': v.mode === 'online' ? 'Online' : 'Cash',
+      'Paid To / Vendor': v.paidTo || '-',
+      'Attachment': v.attachmentName || '-',
+      'Remarks': v.remarks || '-'
+    }));
+    exportXlsx(rows, `Cycle_${cycleNum}_Vouchers_Report`);
   };
 
   const handleFileUpload = (e, formSetter)=>{
@@ -804,9 +801,17 @@ export default function Expense({me, onBack}){
           </p>
         </div>
         <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
-          <button type="button" className="btn sm outline" onClick={()=>setSection(null)}>
-            ← Back to Expense Hub
-          </button>
+          {isPettyOnly ? (
+            onBack && (
+              <button type="button" className="btn sm outline" onClick={onBack}>
+                ← Back to Dashboard Hub
+              </button>
+            )
+          ) : (
+            <button type="button" className="btn sm outline" onClick={()=>setSection(null)}>
+              ← Back to Expense Hub
+            </button>
+          )}
           <span className="badge">Role: {me.role}</span>
         </div>
       </div>
@@ -861,18 +866,15 @@ export default function Expense({me, onBack}){
             📝 Record Petty Cash Voucher
           </button>
         )}
-        {!isReportsOnly && (
+        <button className={`btn sm ${pettyTab==='cycles_report'?'':'outline'}`} onClick={()=>setPettyTab('cycles_report')}>
+          📊 Petty Cash Cycles Audit Report ({cycles.length})
+        </button>
+        {!isPettyOnly && !isReportsOnly && (
           <button className={`btn sm ${pettyTab==='return'?'':'outline'}`} onClick={()=>setPettyTab('return')} style={{borderColor:'#d97706'}}>
             🔄 Return Balance & Settle Cycle
           </button>
         )}
-        <button className={`btn sm ${pettyTab==='cycles_report'?'':'outline'}`} onClick={()=>setPettyTab('cycles_report')}>
-          📊 Petty Cash Cycles Audit Report ({cycles.length})
-        </button>
-        <button className={`btn sm ${pettyTab==='vouchers_log'?'':'outline'}`} onClick={()=>setPettyTab('vouchers_log')}>
-          📑 All Petty Vouchers ({pettyExpenses.length})
-        </button>
-        {!isReportsOnly && can(me, 'petty_cash_disburse') && (
+        {!isPettyOnly && !isReportsOnly && can(me, 'petty_cash_disburse') && (
           <button className={`btn sm ${pettyTab==='disburse'?'':'outline'}`} onClick={()=>setPettyTab('disburse')}>
             ➕ Issue Fresh Imprest Float
           </button>
@@ -933,24 +935,38 @@ export default function Expense({me, onBack}){
               </label>
 
               <label>
-                Paid To / Vendor
-                <input placeholder="e.g. Anand Tea Stall / HP Petrol Bunk" value={voucherForm.paidTo} onChange={e=>setVoucherForm({...voucherForm, paidTo:e.target.value})}/>
+                Payment Mode *
+                <select 
+                  value={voucherForm.mode} 
+                  onChange={e=>setVoucherForm({...voucherForm, mode:e.target.value})} 
+                  required
+                >
+                  <option value="cash">💵 Direct Cash</option>
+                  <option value="online">📱 Online (UPI / GPay / QR / Card)</option>
+                </select>
               </label>
             </div>
 
             <div className="grid2" style={{marginTop:'12px'}}>
               <label>
+                Paid To / Vendor
+                <input placeholder="e.g. Anand Tea Stall / HP Petrol Bunk" value={voucherForm.paidTo} onChange={e=>setVoucherForm({...voucherForm, paidTo:e.target.value})}/>
+              </label>
+
+              <label>
                 Bill Receipt / Voucher Attachment
                 <input type="file" onChange={e=>handleFileUpload(e, setVoucherForm)}/>
                 {voucherForm.attachmentName && <span style={{fontSize:'12px',color:'#0284c7'}}>Attached: {voucherForm.attachmentName}</span>}
               </label>
+            </div>
 
+            <div style={{marginTop:'12px'}}>
               <label>
-                Deducted From Cycle
+                Deducted From Imprest Cycle
                 <input 
                   type="text" 
                   disabled 
-                  value={activeCycle ? `Cycle #${activeCycle.cycleNumber} (${activeCycle.custodianName})` : 'No active cycle!'}
+                  value={activeCycle ? `Cycle #${activeCycle.cycleNumber} (${activeCycle.custodianName}) — Current Float Balance: ${inr(activeCycleBalanceInHand)}` : 'No active cycle!'}
                   style={{background:'#f1f5fa'}}
                 />
               </label>
@@ -1106,17 +1122,10 @@ export default function Expense({me, onBack}){
       {pettyTab === 'cycles_report' && (
         <div>
           <div className="card" style={{marginBottom:'16px'}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'10px'}}>
-              <div>
-                <h3 style={{margin:0}}>Petty Cash Imprest Cycles Audit History</h3>
-                <p className="muted" style={{margin:'4px 0 0',fontSize:'13px'}}>
-                  Reconciliation of every ₹20,000 float: Given ➔ Vouchers Spent ➔ Returned ➔ Discrepancy (₹0).
-                </p>
-              </div>
-              <button type="button" className="btn" onClick={exportPettyCyclesLog}>
-                📥 Export Cycles Audit to Excel
-              </button>
-            </div>
+            <h3 style={{margin:0}}>Petty Cash Imprest Cycles Audit History</h3>
+            <p className="muted" style={{margin:'4px 0 0',fontSize:'13px'}}>
+              Reconciliation of every ₹20,000 float: Given ➔ Vouchers Spent ➔ Returned ➔ Discrepancy (₹0). Click "View Vouchers" on any cycle to inspect and download its Excel voucher report.
+            </p>
           </div>
 
           <div className="card">
@@ -1194,14 +1203,24 @@ export default function Expense({me, onBack}){
             </div>
           </div>
 
-          {/* Modal / Panel: View Vouchers for selected cycle */}
+          {/* Modal / Panel: View Vouchers for selected cycle with Download Option */}
           {selectedCycleVouchers && (
             <div className="card" style={{marginTop:'20px',border:'2px solid var(--navy2)'}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px',flexWrap:'wrap',gap:'10px'}}>
                 <h3 style={{margin:0}}>
                   🧾 Vouchers for Cycle #{selectedCycleVouchers.cycle.cycleNumber} ({toDmy(selectedCycleVouchers.cycle.startDate)} to {selectedCycleVouchers.cycle.endDate ? toDmy(selectedCycleVouchers.cycle.endDate) : 'Active'})
                 </h3>
-                <button type="button" className="btn sm" onClick={()=>setSelectedCycleVouchers(null)}>✕ Close</button>
+                <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+                  <button 
+                    type="button" 
+                    className="btn sm" 
+                    onClick={()=>exportSelectedCycleVouchers(selectedCycleVouchers)}
+                    title="Export this cycle's vouchers to Excel"
+                  >
+                    📥 Download Excel Report
+                  </button>
+                  <button type="button" className="btn sm outline" onClick={()=>setSelectedCycleVouchers(null)}>✕ Close</button>
+                </div>
               </div>
 
               <div className="table-wrap">
@@ -1211,6 +1230,7 @@ export default function Expense({me, onBack}){
                       <th>Date</th>
                       <th>Item / Category</th>
                       <th>Amount</th>
+                      <th>Payment Mode</th>
                       <th>Paid To / Vendor</th>
                       <th>Attachment</th>
                       <th>Remarks</th>
@@ -1218,13 +1238,18 @@ export default function Expense({me, onBack}){
                   </thead>
                   <tbody>
                     {selectedCycleVouchers.vouchers.length === 0 ? (
-                      <tr><td colSpan="6" style={{textAlign:'center',padding:'16px'}}>No vouchers recorded under this cycle yet.</td></tr>
+                      <tr><td colSpan="7" style={{textAlign:'center',padding:'16px'}}>No vouchers recorded under this cycle yet.</td></tr>
                     ) : (
                       selectedCycleVouchers.vouchers.map(v=>(
                         <tr key={v.id}>
                           <td><b>{toDmy(v.date)}</b></td>
                           <td>{v.itemName}</td>
                           <td><b style={{color:'var(--red)'}}>{inr(v.amount)}</b></td>
+                          <td>
+                            <span className="badge" style={{background: v.mode === 'online' ? '#e0e7ff' : '#f1f5fa', color: v.mode === 'online' ? '#4338ca' : '#1e293b'}}>
+                              {v.mode === 'online' ? '📱 ONLINE' : '💵 CASH'}
+                            </span>
+                          </td>
                           <td>{v.paidTo || '-'}</td>
                           <td>{v.attachmentName ? <span style={{color:'#0284c7'}}>📎 {v.attachmentName}</span> : '-'}</td>
                           <td><small>{v.remarks || '-'}</small></td>
@@ -1236,49 +1261,6 @@ export default function Expense({me, onBack}){
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* ===================================================================
-          TAB 4: ALL PETTY VOUCHERS LOG
-          =================================================================== */}
-      {pettyTab === 'vouchers_log' && (
-        <div className="card">
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
-            <h3 style={{margin:0}}>All Petty Cash Vouchers History ({pettyExpenses.length})</h3>
-            <b>Total Spent All-Time: {inr(totalPettySpentAllTime)}</b>
-          </div>
-
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Cycle</th>
-                  <th>Category</th>
-                  <th>Amount</th>
-                  <th>Paid To</th>
-                  <th>Attachment</th>
-                  <th>Remarks</th>
-                  <th>Logged By</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pettyExpenses.sort((a,b)=>b.date.localeCompare(a.date)).map(e=>(
-                  <tr key={e.id}>
-                    <td><b>{toDmy(e.date)}</b></td>
-                    <td><span className="badge">Cycle #{e.cycleNumber || 1}</span></td>
-                    <td>{e.itemName}</td>
-                    <td><b style={{color:'var(--red)'}}>{inr(e.amount)}</b></td>
-                    <td>{e.paidTo || '-'}</td>
-                    <td>{e.attachmentName ? <span style={{color:'#0284c7'}}>📎 {e.attachmentName}</span> : '-'}</td>
-                    <td><small>{e.remarks || '-'}</small></td>
-                    <td><small>{e.createdBy || '-'}</small></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         </div>
       )}
 

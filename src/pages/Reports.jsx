@@ -583,6 +583,7 @@ export default function Reports({onBack}){
               'Date': toDmy(e.date),
               'Expense Item': e.itemName,
               'Amount': e.amount,
+              'Payment Mode': e.mode === 'online' ? 'Online (UPI/QR)' : 'Cash',
               'Vendor / Paid To': e.paidTo || '-',
               'Attachment': e.attachmentName ? `📎 ${e.attachmentName}` : '-',
               'Remarks': e.remarks || '-',
