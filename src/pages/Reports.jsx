@@ -526,44 +526,58 @@ export default function Reports({onBack}){
         </div>
       </div>
 
-      {/* Filter Card (From dd-mm-yyyy, To dd-mm-yyyy, Course dropdown) */}
+      {/* Sleek Compact Filter Bar (Standard Website Style) */}
       <div className="filter-card">
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px',flexWrap:'wrap',gap:'6px'}}>
-          <span style={{fontWeight:600,color:'var(--navy)',fontSize:'13px'}}>🔍 Filter Records:</span>
-          {hasFilter && (
-            <span style={{fontSize:'12px',background:'#fff7dc',color:'#855c00',padding:'2px 8px',borderRadius:'10px',border:'1px solid #ffeeba'}}>
-              Filters Active ({from?`From: ${toDmy(from)}`:''} {to?`To: ${toDmy(to)}`:''} {course?'Course filtered':''})
-            </span>
-          )}
-        </div>
-        <div className="grid-filter">
-          <label>
-            From <span className="filter-label-format">(dd-mm-yyyy)</span>
-            <input type="date" value={from} onChange={e=>setFrom(e.target.value)}/>
+        <div style={{display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'}}>
+          <span style={{fontWeight:700,color:'var(--navy)',fontSize:'12px',display:'inline-flex',alignItems:'center',gap:'4px'}}>
+            <span>🔍</span> Filters:
+          </span>
+          <label style={{display:'inline-flex',alignItems:'center',gap:'6px',margin:0,fontSize:'12px',fontWeight:600,color:'#334155'}}>
+            From:
+            <input 
+              type="date" 
+              value={from} 
+              onChange={e=>setFrom(e.target.value)}
+              style={{width:'135px',height:'32px',padding:'4px 8px',margin:0,fontSize:'12px'}}
+            />
           </label>
-          <label>
-            To <span className="filter-label-format">(dd-mm-yyyy)</span>
-            <input type="date" value={to} onChange={e=>setTo(e.target.value)}/>
+          <label style={{display:'inline-flex',alignItems:'center',gap:'6px',margin:0,fontSize:'12px',fontWeight:600,color:'#334155'}}>
+            To:
+            <input 
+              type="date" 
+              value={to} 
+              onChange={e=>setTo(e.target.value)}
+              style={{width:'135px',height:'32px',padding:'4px 8px',margin:0,fontSize:'12px'}}
+            />
           </label>
-          <label>
-            Course
-            <select value={course} onChange={e=>setCourse(e.target.value)}>
+          <label style={{display:'inline-flex',alignItems:'center',gap:'6px',margin:0,fontSize:'12px',fontWeight:600,color:'#334155'}}>
+            Course:
+            <select 
+              value={course} 
+              onChange={e=>setCourse(e.target.value)}
+              style={{width:'180px',height:'32px',padding:'4px 8px',margin:0,fontSize:'12px'}}
+            >
               <option value="">All Courses</option>
               {courses.map(([i,n])=><option key={i} value={i}>{n}</option>)}
             </select>
           </label>
-          <div>
+          {hasFilter && (
             <button
               type="button"
               className="btn sm outline"
               onClick={clearFilters}
-              disabled={!hasFilter}
-              style={{height:'38px',display:'inline-flex',alignItems:'center',gap:'4px'}}
+              style={{height:'32px',padding:'0 10px',fontSize:'12px',display:'inline-flex',alignItems:'center',gap:'4px'}}
+              title="Clear active filters"
             >
-              Clear Filters
+              ✕ Clear Filters
             </button>
-          </div>
+          )}
         </div>
+        {hasFilter && (
+          <span style={{fontSize:'11px',background:'#fff7dc',color:'#855c00',padding:'3px 8px',borderRadius:'12px',border:'1px solid #ffeeba',fontWeight:600}}>
+            Active: {from?`From ${toDmy(from)} `:''}{to?`To ${toDmy(to)} `:''}{course?'Course filtered':''}
+          </span>
+        )}
       </div>
 
       {/* ============================================================== */}
