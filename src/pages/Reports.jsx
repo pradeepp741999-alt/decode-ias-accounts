@@ -9,11 +9,15 @@ export default function Reports({onBack}){
   const [disbursements,setDisbursements]=useState([]);
   const [cycles,setCycles]=useState([]);
   const [returns,setReturns]=useState([]);
-  // activeReport: null = show report cards menu; 'sum' | 'stu' | 'day' | 'col' | 'chart' | 'over' | 'expense_split'
+  // activeReport: null = show report cards menu; 'sum' | 'stu' | 'course_collection' | 'day' | 'col' | 'chart' | 'over' | 'expense_split'
   const [activeReport,setActiveReport]=useState(null);
   const [from,setFrom]=useState('');
   const [to,setTo]=useState('');
   const [course,setCourse]=useState('');
+  // Summary course drill-down state
+  const [selectedSummaryCourseId,setSelectedSummaryCourseId]=useState(null);
+  // Student-wise pending filter toggle (pending only vs all)
+  const [stuPendingOnly,setStuPendingOnly]=useState(true);
 
   useEffect(()=>{
     getDocs(collection(db,'students')).then(r=>setS(r.docs.map(d=>({id:d.id,...d.data()}))));
@@ -47,28 +51,112 @@ export default function Reports({onBack}){
   const totalPettySpent = sum(pettySpentList.map(e=>e.amount));
   const pettyCashBalanceInHand = totalPettyGiven - totalPettySpent;
 
-  // 1. Summary & course-wise
+  // Helper to extract student payment modes & transaction IDs
+  const getStudentPaymentDetails = (studentId) => {
+    const studentPayments = P.filter(p => p.studentId === studentId);
+    if (!studentPayments.length) {
+      return { mode: 'Cash', transId: '-' };
+    }
+    const modes = Array.from(new Set(studentPayments.map(p => p.mode === 'online' ? 'Online' : 'Cash'))).join(', ');
+    const transIds = Array.from(new Set(studentPayments.map(p => p.transId).filter(Boolean))).join(', ') || '-';
+    return { mode: modes, transId: transIds };
+  };
+
+  // 1. Summary & course-wise (Overall Course Overview, without cramming Students & Mobile)
   const byCourse=courses.map(([id,name])=>{
     const x=st.filter(s=>s.courseId===id);
     return {
+      courseId: id,
       'Course':name,
       'No. of Students':x.length,
-      'Students & Mobile':x.map(s=>`${s.name} (${s.mobile})`).join('; ') || '-',
       'Total Fee':sum(x.map(s=>s.netFee)),
       'Collected':sum(x.map(s=>s.totalPaid)),
       'Pending':sum(x.map(s=>s.balance))
     };
   }).filter(r=>r['No. of Students']);
 
-  // 2. Student-wise pending
-  const studentRows=[...st].sort((a,b)=>(a.nextDueDate||'9').localeCompare(b.nextDueDate||'9')).map(s=>({
-    'Student Name':s.name,
-    'Mobile Number':s.mobile,
-    'Course':s.courseName,
-    'Net Fee':s.netFee,
-    'Paid':s.totalPaid,
-    'Pending Due':s.balance,
-    'Due Date':toDmy(s.nextDueDate)
+  // Selected Course Drill-down rows for below grid in Summary & course-wise
+  const selectedCourseStudents = selectedSummaryCourseId 
+    ? st.filter(s => s.courseId === selectedSummaryCourseId)
+    : [];
+  const selectedCourseObj = courses.find(([id]) => id === selectedSummaryCourseId);
+  const selectedCourseName = selectedCourseObj ? selectedCourseObj[1] : '';
+
+  const courseStudentDetailRows = selectedCourseStudents.map((s, index) => {
+    const payInfo = getStudentPaymentDetails(s.id);
+    return {
+      'S.No': index + 1,
+      'Date': toDmy(s.date),
+      'Name': s.name,
+      'Phone Number': s.mobile,
+      'Batch Name': s.batchName || s.batch || 'Regular Batch',
+      'Course': s.courseName,
+      'Net Fee': s.netFee,
+      'Paid': s.totalPaid,
+      'Mode': payInfo.mode,
+      'Trans ID': payInfo.transId,
+      'Pending Due': s.balance,
+      'Due Date': toDmy(s.nextDueDate)
+    };
+  });
+
+  // 2. Student-wise pending (Individual student records with all requested fields)
+  const displayedStudents = [...st]
+    .filter(s => stuPendingOnly ? s.balance > 0 : true)
+    .sort((a,b)=>(a.nextDueDate||'9').localeCompare(b.nextDueDate||'9'));
+
+  const studentPendingRows = displayedStudents.map((s, index) => {
+    const payInfo = getStudentPaymentDetails(s.id);
+    return {
+      'S.No': index + 1,
+      'Date': toDmy(s.date),
+      'Student Name': s.name,
+      'Phone Number': s.mobile,
+      'Course': s.courseName,
+      'Net Fee': s.netFee,
+      'Paid': s.totalPaid,
+      'Mode': payInfo.mode,
+      'Trans ID': payInfo.transId,
+      'Pending Due': s.balance,
+      'Due Date': toDmy(s.nextDueDate)
+    };
+  });
+
+  // 3. Total fees collection course-wise
+  const collectionCourseWiseRows = courses.map(([id, name], index) => {
+    const courseStudents = st.filter(s => s.courseId === id);
+    const coursePayments = pay.filter(p => p.courseId === id);
+    const cFee = sum(courseStudents.map(s => s.netFee));
+    const cOnline = sum(coursePayments.filter(p => p.mode === 'online').map(p => p.amount));
+    const cCash = sum(coursePayments.filter(p => p.mode === 'cash').map(p => p.amount));
+    const cTotal = cOnline + cCash;
+    const cPending = sum(courseStudents.map(s => s.balance));
+    return {
+      'S.No': index + 1,
+      courseId: id,
+      'Course': name,
+      'No. of Students': courseStudents.length,
+      'Total Net Fee': cFee,
+      'Online Received': cOnline,
+      'Cash Received': cCash,
+      'Total Received': cTotal,
+      'Pending Due': cPending
+    };
+  }).filter(r => r['No. of Students'] > 0 || r['Total Received'] > 0);
+
+  const totalOnlineCourseWise = sum(collectionCourseWiseRows.map(r => r['Online Received']));
+  const totalCashCourseWise = sum(collectionCourseWiseRows.map(r => r['Cash Received']));
+  const totalCollectionCourseWise = sum(collectionCourseWiseRows.map(r => r['Total Received']));
+
+  const collectionCourseWiseExportRows = collectionCourseWiseRows.map(r => ({
+    'S.No': r['S.No'],
+    'Course': r['Course'],
+    'No. of Students': r['No. of Students'],
+    'Total Net Fee': r['Total Net Fee'],
+    'Online Received': r['Online Received'],
+    'Cash Received': r['Cash Received'],
+    'Total Received': r['Total Received'],
+    'Pending Due': r['Pending Due']
   }));
 
   // 3. Day-wise grouping calculation
@@ -133,11 +221,20 @@ export default function Reports({onBack}){
       'Days Overdue':Math.round((new Date(today())-new Date(s.nextDueDate))/864e5)
     }));
 
-  const isCurrency=k=>['Total Fee','Collected','Pending','Net Fee','Paid','Pending Due','Amount','Cash Collection','Online Collection','Total Day Collection'].includes(k);
+  const isCurrency=k=>[
+    'Total Fee','Collected','Pending','Net Fee','Paid','Pending Due',
+    'Amount','Cash Collection','Online Collection','Total Day Collection',
+    'Total Net Fee','Cash Received','Online Received','Total Received'
+  ].includes(k);
+
   const renderCell=(k,v)=>{
     if(typeof v==='number'&&isCurrency(k)) return inr(v);
-    if(k==='Mobile Number'&&v&&v!=='-') return <span className="mobile-badge">📞 {v}</span>;
-    if(k==='Mode') return <span style={{textTransform:'capitalize',fontWeight:600,color:v==='online'?'#19376d':'#1e8449'}}>{v}</span>;
+    if((k==='Mobile Number'||k==='Phone Number')&&v&&v!=='-') return <span className="mobile-badge">📞 {v}</span>;
+    if(k==='Mode'||k==='Payment Mode') return (
+      <span className="badge" style={{background: String(v).includes('Online') ? '#e0e7ff' : '#f1f5fa', color: String(v).includes('Online') ? '#4338ca' : '#1e293b'}}>
+        {v}
+      </span>
+    );
     if(k==='Days Overdue') return <span className="err" style={{fontWeight:600}}>{v} days</span>;
     return v;
   };
@@ -172,9 +269,9 @@ export default function Reports({onBack}){
     {
       id:'sum',
       icon:'📑',
-      title:'Summary & course-wise',
-      tag:'Overview',
-      desc:'Course fees overview, student enrollment counts, total collections, and pending dues.',
+      title:'Summary & course-wise pending',
+      tag:'Course Overview',
+      desc:'Course fees overview, student enrollment counts, total collections, and pending dues with student drill-down view.',
       badge:`${courses.length} Courses`
     },
     {
@@ -182,8 +279,16 @@ export default function Reports({onBack}){
       icon:'👥',
       title:'Student-wise pending',
       tag:'Pending Balances',
-      desc:'Individual student records with mobile numbers, enrolled course, total fees, and due dates.',
+      desc:'Individual student records with phone number, course, net fees, paid, mode (cash/online), trans ID, and due dates.',
       badge:`${st.filter(s=>s.balance>0).length} Pending Students`
+    },
+    {
+      id:'course_collection',
+      icon:'💰',
+      title:'Total fees collection course-wise',
+      tag:'Inflow by Course',
+      desc:'Total fees collection course-wise breakdown: Online, Cash, Total received, Pending dues, and Net total.',
+      badge:`${courses.length} Courses`
     },
     {
       id:'day',
@@ -348,46 +453,348 @@ export default function Reports({onBack}){
         </div>
       </div>
 
-      {/* 1. Summary & Course-wise Report Screen */}
+      {/* ============================================================== */}
+      {/* 1. SUMMARY & COURSE-WISE PENDING REPORT SCREEN                 */}
+      {/* ============================================================== */}
       {activeReport==='sum' && (
         <div>
           <div className="grid" style={{marginBottom:'16px'}}>
-            <div className="card kpi">Total to collect<b>{inr(T.fee)}</b></div>
-            <div className="card kpi">Collected<b>{inr(T.paid)}</b></div>
-            <div className="card kpi">Pending<b>{inr(T.bal)}</b></div>
-            <div className="card kpi">Collected + Pending<b>{inr(T.paid+T.bal)}</b></div>
+            <div className="card kpi">Total Course Fee<b>{inr(T.fee)}</b><span className="muted" style={{fontSize:'12px'}}>From {st.length} enrolled students</span></div>
+            <div className="card kpi">Total Collected<b style={{color:'var(--grn)'}}>{inr(T.paid)}</b><span className="muted" style={{fontSize:'12px'}}>Fees received</span></div>
+            <div className="card kpi">Total Pending<b style={{color:'var(--red)'}}>{inr(T.bal)}</b><span className="muted" style={{fontSize:'12px'}}>Outstanding balance</span></div>
+            <div className="card kpi">Total Active Courses<b>{byCourse.length}</b><span className="muted" style={{fontSize:'12px'}}>Offerings with admissions</span></div>
           </div>
-          <Tbl
-            rows={[
-              ...byCourse,
-              {
-                'Course':'TOTAL',
-                'No. of Students':st.length,
-                'Students & Mobile':`${st.length} students total`,
-                'Total Fee':T.fee,
-                'Collected':T.paid,
-                'Pending':T.bal
-              }
-            ]}
-            name="course_wise_summary"
-          />
+
+          {/* First Grid: Overall Course-wise Overview (without Students & Mobile column) */}
+          <div className="sub-card">
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px',flexWrap:'wrap',gap:'8px'}}>
+              <div>
+                <span style={{fontWeight:700,color:'var(--navy)',fontSize:'14px'}}>
+                  Overall Course-wise Pending Overview
+                </span>
+                <span className="muted" style={{fontSize:'12px',marginLeft:'8px'}}>
+                  (Showing <b>{byCourse.length}</b> courses — Click "View" to drill down into student records below)
+                </span>
+              </div>
+              <button 
+                className="btn sm gold" 
+                onClick={()=>exportXlsx(byCourse.map(r=>({
+                  'Course': r.Course,
+                  'No. of Students': r['No. of Students'],
+                  'Total Fee': r['Total Fee'],
+                  'Collected': r['Collected'],
+                  'Pending': r['Pending']
+                })), 'Course_Wise_Summary_Overview')}
+              >
+                📥 Download Summary Excel
+              </button>
+            </div>
+            <div className="wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Course</th>
+                    <th>No. of Students</th>
+                    <th>Total Fee</th>
+                    <th>Collected</th>
+                    <th>Pending</th>
+                    <th>Student Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byCourse.length === 0 ? (
+                    <tr><td colSpan="6" style={{textAlign:'center',padding:'16px'}}>No course records found matching filters.</td></tr>
+                  ) : (
+                    byCourse.map((r)=>(
+                      <tr key={r.courseId}>
+                        <td><b>{r.Course}</b></td>
+                        <td><span className="count-tag">{r['No. of Students']}</span></td>
+                        <td><b>{inr(r['Total Fee'])}</b></td>
+                        <td><b style={{color:'var(--grn)'}}>{inr(r['Collected'])}</b></td>
+                        <td><b style={{color:'var(--red)'}}>{inr(r['Pending'])}</b></td>
+                        <td>
+                          <button 
+                            type="button" 
+                            className={`btn sm ${selectedSummaryCourseId===r.courseId?'':'outline'}`}
+                            onClick={()=>setSelectedSummaryCourseId(selectedSummaryCourseId===r.courseId?null:r.courseId)}
+                          >
+                            👁️ {selectedSummaryCourseId===r.courseId ? 'Viewing' : 'View'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                  {byCourse.length > 0 && (
+                    <tr className="total">
+                      <td><b>TOTAL</b></td>
+                      <td><b>{st.length}</b></td>
+                      <td><b>{inr(T.fee)}</b></td>
+                      <td><b style={{color:'var(--grn)'}}>{inr(T.paid)}</b></td>
+                      <td><b style={{color:'var(--red)'}}>{inr(T.bal)}</b></td>
+                      <td>-</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Second Grid: Extra grid below showing student records of clicked course */}
+          {selectedSummaryCourseId && (
+            <div className="sub-card" style={{marginTop:'22px', border:'2px solid var(--navy2)'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px',flexWrap:'wrap',gap:'8px'}}>
+                <div>
+                  <h4 style={{margin:0,color:'var(--navy)'}}>
+                    👥 Enrolled Students for: <b>{selectedCourseName}</b> ({courseStudentDetailRows.length} Students)
+                  </h4>
+                  <p className="muted" style={{margin:'2px 0 0',fontSize:'12px'}}>
+                    Individual student admissions, batch names, payment modes, trans IDs, and pending dues
+                  </p>
+                </div>
+                <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+                  <button 
+                    className="btn sm gold" 
+                    onClick={()=>exportXlsx(courseStudentDetailRows, `${(selectedCourseName||'Course').replace(/[^a-zA-Z0-9]/g,'_')}_Students_Report`)}
+                  >
+                    📥 Download Course Excel
+                  </button>
+                  <button className="btn sm outline" onClick={()=>setSelectedSummaryCourseId(null)}>✕ Close</button>
+                </div>
+              </div>
+
+              <div className="wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>S.No</th>
+                      <th>Date</th>
+                      <th>Name</th>
+                      <th>Phone Number</th>
+                      <th>Batch Name</th>
+                      <th>Course</th>
+                      <th>Net Fee</th>
+                      <th>Paid</th>
+                      <th>Mode</th>
+                      <th>Trans ID</th>
+                      <th>Pending Due</th>
+                      <th>Due Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {courseStudentDetailRows.length === 0 ? (
+                      <tr><td colSpan="12" style={{textAlign:'center',padding:'16px'}}>No students enrolled for this course in the selected date range.</td></tr>
+                    ) : (
+                      courseStudentDetailRows.map((r)=>(
+                        <tr key={r['S.No']}>
+                          <td><b>{r['S.No']}</b></td>
+                          <td>{r['Date']}</td>
+                          <td className="student-name-tag">{r['Name']}</td>
+                          <td><span className="mobile-badge">📞 {r['Phone Number']}</span></td>
+                          <td>{r['Batch Name']}</td>
+                          <td>{r['Course']}</td>
+                          <td>{inr(r['Net Fee'])}</td>
+                          <td><b style={{color:'var(--grn)'}}>{inr(r['Paid'])}</b></td>
+                          <td>
+                            <span className="badge" style={{background: String(r['Mode']).includes('Online') ? '#e0e7ff' : '#f1f5fa', color: String(r['Mode']).includes('Online') ? '#4338ca' : '#1e293b'}}>
+                              {r['Mode']}
+                            </span>
+                          </td>
+                          <td><small>{r['Trans ID']}</small></td>
+                          <td><b style={{color:'var(--red)'}}>{inr(r['Pending Due'])}</b></td>
+                          <td>{r['Due Date']}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* 2. Student-wise Pending Report Screen */}
+      {/* ============================================================== */}
+      {/* 2. STUDENT-WISE PENDING REPORT SCREEN                          */}
+      {/* ============================================================== */}
       {activeReport==='stu' && (
         <div>
           <div className="sub-card" style={{marginBottom:'16px',background:'#fff8f8',borderColor:'#f5c6cb'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px'}}>
-              <span style={{color:'var(--red)',fontWeight:600}}>
-                Total Outstanding Balance: {inr(T.bal)}
-              </span>
-              <span className="muted" style={{fontSize:'13px'}}>
-                {st.filter(s=>s.balance>0).length} of {st.length} students have remaining fees
-              </span>
+              <div>
+                <span style={{color:'var(--red)',fontWeight:700,fontSize:'16px'}}>
+                  Total Outstanding Balance: {inr(T.bal)}
+                </span>
+                <span className="muted" style={{fontSize:'13px',display:'block',marginTop:'2px'}}>
+                  {st.filter(s=>s.balance>0).length} of {st.length} students have remaining fees
+                </span>
+              </div>
+              <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+                <label style={{display:'flex',alignItems:'center',gap:'6px',fontSize:'13px',cursor:'pointer',margin:0}}>
+                  <input 
+                    type="checkbox" 
+                    style={{width:'auto',margin:0}} 
+                    checked={stuPendingOnly} 
+                    onChange={e=>setStuPendingOnly(e.target.checked)}
+                  />
+                  <span>Show Pending Dues Only</span>
+                </label>
+              </div>
             </div>
           </div>
-          <Tbl rows={studentRows} name="student_wise_pending"/>
+
+          <div className="sub-card">
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px',flexWrap:'wrap',gap:'8px'}}>
+              <span className="muted" style={{fontSize:'13px'}}>Showing <b>{studentPendingRows.length}</b> student records</span>
+              <button 
+                className="btn sm gold" 
+                onClick={()=>exportXlsx(studentPendingRows, 'Student_Wise_Pending_Report')}
+              >
+                📥 Download Excel
+              </button>
+            </div>
+            <div className="wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>S.No</th>
+                    <th>Date</th>
+                    <th>Student Name</th>
+                    <th>Phone Number</th>
+                    <th>Course</th>
+                    <th>Net Fee</th>
+                    <th>Paid</th>
+                    <th>Mode</th>
+                    <th>Trans ID</th>
+                    <th>Pending Due</th>
+                    <th>Due Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {studentPendingRows.length === 0 ? (
+                    <tr><td colSpan="11" style={{textAlign:'center',padding:'16px'}}>No student records found matching filters.</td></tr>
+                  ) : (
+                    studentPendingRows.map((r)=>(
+                      <tr key={r['S.No']}>
+                        <td><b>{r['S.No']}</b></td>
+                        <td>{r['Date']}</td>
+                        <td className="student-name-tag">{r['Student Name']}</td>
+                        <td><span className="mobile-badge">📞 {r['Phone Number']}</span></td>
+                        <td>{r['Course']}</td>
+                        <td>{inr(r['Net Fee'])}</td>
+                        <td><b style={{color:'var(--grn)'}}>{inr(r['Paid'])}</b></td>
+                        <td>
+                          <span className="badge" style={{background: String(r['Mode']).includes('Online') ? '#e0e7ff' : '#f1f5fa', color: String(r['Mode']).includes('Online') ? '#4338ca' : '#1e293b'}}>
+                            {r['Mode']}
+                          </span>
+                        </td>
+                        <td><small>{r['Trans ID']}</small></td>
+                        <td><b style={{color:'var(--red)'}}>{inr(r['Pending Due'])}</b></td>
+                        <td>{r['Due Date']}</td>
+                      </tr>
+                    ))
+                  )}
+                  {studentPendingRows.length > 0 && (
+                    <tr className="total">
+                      <td colSpan="5"><b>TOTAL</b></td>
+                      <td><b>{inr(sum(studentPendingRows.map(r=>r['Net Fee'])))}</b></td>
+                      <td><b style={{color:'var(--grn)'}}>{inr(sum(studentPendingRows.map(r=>r['Paid'])))}</b></td>
+                      <td colSpan="2">-</td>
+                      <td><b style={{color:'var(--red)'}}>{inr(sum(studentPendingRows.map(r=>r['Pending Due'])))}</b></td>
+                      <td>-</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* 3. TOTAL FEES COLLECTION COURSE-WISE REPORT SCREEN             */}
+      {/* ============================================================== */}
+      {activeReport==='course_collection' && (
+        <div>
+          {/* KPI Summary Cards */}
+          <div className="grid" style={{marginBottom:'16px'}}>
+            <div className="card kpi" style={{borderLeft:'4px solid var(--grn)'}}>
+              Total Fees Received
+              <b style={{color:'var(--grn)'}}>{inr(totalCollectionCourseWise)}</b>
+              <span className="muted" style={{fontSize:'12px'}}>From all student payments</span>
+            </div>
+            <div className="card kpi" style={{borderLeft:'4px solid #16a34a'}}>
+              Cash Received
+              <b style={{color:'var(--navy)'}}>{inr(totalCashCourseWise)}</b>
+              <span className="muted" style={{fontSize:'12px'}}>Direct cash collections</span>
+            </div>
+            <div className="card kpi" style={{borderLeft:'4px solid #4338ca'}}>
+              Online Received
+              <b style={{color:'#4338ca'}}>{inr(totalOnlineCourseWise)}</b>
+              <span className="muted" style={{fontSize:'12px'}}>UPI, Net Banking, Cards</span>
+            </div>
+            <div className="card kpi" style={{borderLeft:'4px solid var(--red)'}}>
+              Total Pending Dues
+              <b style={{color:'var(--red)'}}>{inr(T.bal)}</b>
+              <span className="muted" style={{fontSize:'12px'}}>Outstanding student fees</span>
+            </div>
+          </div>
+
+          <div className="sub-card">
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px',flexWrap:'wrap',gap:'8px'}}>
+              <span className="muted" style={{fontSize:'13px'}}>Showing <b>{collectionCourseWiseRows.length}</b> courses</span>
+              <button 
+                className="btn sm gold" 
+                onClick={()=>exportXlsx(collectionCourseWiseExportRows, 'Total_Fees_Collection_Course_Wise')}
+              >
+                📥 Download Excel
+              </button>
+            </div>
+            <div className="wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>S.No</th>
+                    <th>Course</th>
+                    <th>No. of Students</th>
+                    <th>Total Net Fee</th>
+                    <th>Online Received</th>
+                    <th>Cash Received</th>
+                    <th>Total Received</th>
+                    <th>Pending Due</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {collectionCourseWiseRows.length === 0 ? (
+                    <tr><td colSpan="8" style={{textAlign:'center',padding:'16px'}}>No course collections found matching filters.</td></tr>
+                  ) : (
+                    collectionCourseWiseRows.map((r)=>(
+                      <tr key={r['S.No']}>
+                        <td><b>{r['S.No']}</b></td>
+                        <td><b>{r['Course']}</b></td>
+                        <td><span className="count-tag">{r['No. of Students']}</span></td>
+                        <td><b>{inr(r['Total Net Fee'])}</b></td>
+                        <td><b style={{color:'#4338ca'}}>{inr(r['Online Received'])}</b></td>
+                        <td><b style={{color:'#16a34a'}}>{inr(r['Cash Received'])}</b></td>
+                        <td><b style={{color:'var(--grn)'}}>{inr(r['Total Received'])}</b></td>
+                        <td><b style={{color:'var(--red)'}}>{inr(r['Pending Due'])}</b></td>
+                      </tr>
+                    ))
+                  )}
+                  {collectionCourseWiseRows.length > 0 && (
+                    <tr className="total">
+                      <td colSpan="2"><b>TOTAL</b></td>
+                      <td><b>{st.length}</b></td>
+                      <td><b>{inr(T.fee)}</b></td>
+                      <td><b style={{color:'#4338ca'}}>{inr(totalOnlineCourseWise)}</b></td>
+                      <td><b style={{color:'#16a34a'}}>{inr(totalCashCourseWise)}</b></td>
+                      <td><b style={{color:'var(--grn)'}}>{inr(totalCollectionCourseWise)}</b></td>
+                      <td><b style={{color:'var(--red)'}}>{inr(T.bal)}</b></td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 

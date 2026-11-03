@@ -180,16 +180,17 @@ export default function Expense({me, onBack}){
   // Add Item to Catalog
   const addItem = async e=>{
     e.preventDefault();
-    if(!newItemName.trim()) return;
+    const nameToAdd = newItemName.trim();
+    if(!nameToAdd) return;
     setBusy(true);
     try{
       await addDoc(collection(db,'expenseItems'),{
-        name: newItemName.trim(),
+        name: nameToAdd,
         active: true,
         createdAt: new Date().toISOString()
       });
       setNewItemName('');
-      setMsg('New expense category added successfully!');
+      setMsg(`New expense category "${nameToAdd}" added successfully! It is now available in the voucher category list.`);
       await loadData();
     }catch(x){
       setErr(x.message);
@@ -866,6 +867,9 @@ export default function Expense({me, onBack}){
             📝 Record Petty Cash Voucher
           </button>
         )}
+        <button className={`btn sm ${pettyTab==='items'?'':'outline'}`} onClick={()=>setPettyTab('items')}>
+          🏷️ Category / Items Setup ({items.length})
+        </button>
         <button className={`btn sm ${pettyTab==='cycles_report'?'':'outline'}`} onClick={()=>setPettyTab('cycles_report')}>
           📊 Petty Cash Cycles Audit Report ({cycles.length})
         </button>
@@ -900,7 +904,17 @@ export default function Expense({me, onBack}){
           <form onSubmit={savePettyVoucher}>
             <div className="grid2">
               <label>
-                Petty Expense Item *
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'2px'}}>
+                  <span>Petty Expense Item *</span>
+                  <button 
+                    type="button" 
+                    className="link" 
+                    style={{fontSize:'12px',fontWeight:'600',color:'#0284c7',textDecoration:'underline'}}
+                    onClick={()=>setPettyTab('items')}
+                  >
+                    + Add New Category (e.g. News Paper)
+                  </button>
+                </div>
                 <select value={voucherForm.itemId} onChange={e=>setVoucherForm({...voucherForm, itemId:e.target.value})} required>
                   <option value="">-- Select Expense Item --</option>
                   {items.filter(it=>it.active).map(it=>(
@@ -994,6 +1008,67 @@ export default function Expense({me, onBack}){
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* ===================================================================
+          TAB: ADD & MANAGE CATEGORY ITEMS (News Paper, Refreshments, etc.)
+          =================================================================== */}
+      {pettyTab === 'items' && (
+        <div className="card" style={{maxWidth:'850px',margin:'0 auto'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px',flexWrap:'wrap',gap:'10px'}}>
+            <div>
+              <h3 style={{margin:0}}>🏷️ Add & Manage Expense Categories</h3>
+              <p className="muted" style={{margin:'4px 0 0',fontSize:'13px'}}>
+                Add any missing category item (e.g. <b>News Paper</b>, <b>Milk & Refreshments</b>, <b>Courier / Speed Post</b>) to update the system.
+              </p>
+            </div>
+            {!isReportsOnly && (
+              <button type="button" className="btn sm outline" onClick={()=>setPettyTab('voucher')}>
+                ← Back to Voucher Entry
+              </button>
+            )}
+          </div>
+
+          <form onSubmit={addItem} style={{display:'flex',gap:'10px',marginBottom:'20px',flexWrap:'wrap'}}>
+            <input 
+              style={{flex:1,minWidth:'250px'}}
+              placeholder="Enter new category name (e.g. News Paper, Milk, Cleaning Supplies)"
+              value={newItemName}
+              onChange={e=>setNewItemName(e.target.value)}
+              required
+            />
+            <button type="submit" className="btn" disabled={busy}>+ Add Category Item</button>
+          </form>
+
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Category Name</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map(it=>(
+                  <tr key={it.id}>
+                    <td><b>{it.name}</b></td>
+                    <td>
+                      <span className={`badge ${it.active?'':'late'}`}>
+                        {it.active ? 'ACTIVE' : 'INACTIVE'}
+                      </span>
+                    </td>
+                    <td>
+                      <button type="button" className="btn sm outline" onClick={()=>toggleItemActive(it)}>
+                        {it.active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
