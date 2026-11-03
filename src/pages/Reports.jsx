@@ -1,7 +1,13 @@
-import {useEffect,useState} from 'react';
-import {collection,getDocs} from 'firebase/firestore';
+import {useEffect,useState,Fragment} from 'react';
+import {collection,getDocs,doc,getDoc} from 'firebase/firestore';
 import {db} from '../firebase';
 import {today,inr,exportXlsx,toDmy} from '../util';
+
+const DEFAULT_REPORT_VIS = {
+  showPendingChart: true,
+  showDueDateCrossed: true,
+  showIncomeVsExpense: true
+};
 
 export default function Reports({onBack}){
   const [S,setS]=useState([]),[P,setP]=useState([]);
@@ -18,6 +24,40 @@ export default function Reports({onBack}){
   const [selectedSummaryCourseId,setSelectedSummaryCourseId]=useState(null);
   // Student-wise pending filter toggle (pending only vs all)
   const [stuPendingOnly,setStuPendingOnly]=useState(true);
+
+  // Admin visibility controls for Report tabs (Pending chart, Due date crossed, Income vs expenses & petty cash)
+  const [reportVis, setReportVis] = useState(() => {
+    try {
+      const saved = localStorage.getItem('decode_report_visibility');
+      return saved ? { ...DEFAULT_REPORT_VIS, ...JSON.parse(saved) } : DEFAULT_REPORT_VIS;
+    } catch (e) {
+      return DEFAULT_REPORT_VIS;
+    }
+  });
+
+  useEffect(() => {
+    const handleVisUpdate = () => {
+      try {
+        const saved = localStorage.getItem('decode_report_visibility');
+        if (saved) setReportVis(prev => ({ ...prev, ...JSON.parse(saved) }));
+      } catch (e) {}
+    };
+    window.addEventListener('report_vis_changed', handleVisUpdate);
+    window.addEventListener('storage', handleVisUpdate);
+
+    getDoc(doc(db, 'settings', 'report_visibility')).then(snap => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setReportVis(prev => ({ ...prev, ...data }));
+        try { localStorage.setItem('decode_report_visibility', JSON.stringify(data)); } catch (e) {}
+      }
+    }).catch(() => {});
+
+    return () => {
+      window.removeEventListener('report_vis_changed', handleVisUpdate);
+      window.removeEventListener('storage', handleVisUpdate);
+    };
+  }, []);
 
   useEffect(()=>{
     getDocs(collection(db,'students')).then(r=>setS(r.docs.map(d=>({id:d.id,...d.data()}))));
@@ -159,37 +199,76 @@ export default function Reports({onBack}){
     'Pending Due': r['Pending Due']
   }));
 
-  // 3. Day-wise grouping calculation
+  // 4. Day-wise grouping calculation (Group receipts under each date)
   const dayMap = {};
   pay.forEach(p => {
     const d = p.date;
     if (!dayMap[d]) {
-      dayMap[d] = { date: d, cash: 0, online: 0, total: 0, receipts: [], students: new Set() };
+      dayMap[d] = { date: d, cash: 0, online: 0, total: 0, receipts: [] };
     }
     const amt = Number(p.amount) || 0;
     if (p.mode === 'cash') dayMap[d].cash += amt;
     else dayMap[d].online += amt;
     dayMap[d].total += amt;
-    const stu = studentMap.get(p.studentId);
-    const mob = (stu && stu.mobile) || p.mobile || '';
-    dayMap[d].students.add(`${p.studentName}${mob ? ` (${mob})` : ''}`);
     dayMap[d].receipts.push(p);
   });
 
   const dayKeys = Object.keys(dayMap).sort((a,b) => b.localeCompare(a));
-  const dayRows = dayKeys.map(d => ({
-    'Date': toDmy(d),
-    'Receipts Count': dayMap[d].receipts.length,
-    'Students (Name & Mobile)': Array.from(dayMap[d].students).join('; '),
-    'Cash Collection': dayMap[d].cash,
-    'Online Collection': dayMap[d].online,
-    'Total Day Collection': dayMap[d].total
-  }));
-
   const totalDayCash = sum(dayKeys.map(d => dayMap[d].cash));
   const totalDayOnline = sum(dayKeys.map(d => dayMap[d].online));
   const totalDayAll = sum(dayKeys.map(d => dayMap[d].total));
-  const totalReceiptsCount = sum(dayKeys.map(d => dayMap[d].receipts.length));
+
+  // Day-wise Export Rows with Subtotal row under each date
+  // Clean financial register layout: blank fields instead of '--', numeric value only in 'Total Single Day Collection'
+  const dayWiseGroupedExportRows = [];
+  let globalReceiptCounter = 1;
+  dayKeys.forEach(d => {
+    const group = dayMap[d];
+    group.receipts.forEach(p => {
+      const stu = studentMap.get(p.studentId);
+      const mob = (stu && stu.mobile) || p.mobile || '';
+      dayWiseGroupedExportRows.push({
+        'S.No': globalReceiptCounter++,
+        'Date': toDmy(p.date),
+        'Student Name': p.studentName || '',
+        'Phone Number': mob,
+        'Course': p.courseName || '',
+        'Payment Mode': p.mode === 'online' ? 'Online' : 'Cash',
+        'Trans ID': p.transId || '',
+        'Amount': p.amount,
+        'Remarks': p.remarks || '',
+        'Total Single Day Collection': ''
+      });
+    });
+    // Subtotal row for this date: all other columns blank, numeric value only in 'Total Single Day Collection'
+    dayWiseGroupedExportRows.push({
+      'S.No': '',
+      'Date': toDmy(d),
+      'Student Name': '',
+      'Phone Number': '',
+      'Course': '',
+      'Payment Mode': '',
+      'Trans ID': '',
+      'Amount': '',
+      'Remarks': '',
+      'Total Single Day Collection': group.total
+    });
+  });
+
+  if (dayKeys.length > 0) {
+    dayWiseGroupedExportRows.push({
+      'S.No': '',
+      'Date': 'OVERALL GRAND TOTAL',
+      'Student Name': '',
+      'Phone Number': '',
+      'Course': '',
+      'Payment Mode': '',
+      'Trans ID': '',
+      'Amount': '',
+      'Remarks': '',
+      'Total Single Day Collection': totalDayAll
+    });
+  }
 
   // 4. Collections (Cash / Online)
   const cash=sum(pay.filter(p=>p.mode==='cash').map(p=>p.amount));
@@ -224,7 +303,8 @@ export default function Reports({onBack}){
   const isCurrency=k=>[
     'Total Fee','Collected','Pending','Net Fee','Paid','Pending Due',
     'Amount','Cash Collection','Online Collection','Total Day Collection',
-    'Total Net Fee','Cash Received','Online Received','Total Received'
+    'Total Net Fee','Cash Received','Online Received','Total Received',
+    'Total Single Day Collection'
   ].includes(k);
 
   const renderCell=(k,v)=>{
@@ -265,7 +345,7 @@ export default function Reports({onBack}){
 
   const max=Math.max(1,...byCourse.map(r=>r.Pending));
 
-  const REPORT_CARDS=[
+  const ALL_REPORT_CARDS=[
     {
       id:'sum',
       icon:'📑',
@@ -332,6 +412,14 @@ export default function Reports({onBack}){
     }
   ];
 
+  // Filter report cards based on Admin display controls (show/hide for Pending chart, Due date crossed, Income vs expenses)
+  const REPORT_CARDS = ALL_REPORT_CARDS.filter(rc => {
+    if (rc.id === 'chart' && !reportVis.showPendingChart) return false;
+    if (rc.id === 'over' && !reportVis.showDueDateCrossed) return false;
+    if (rc.id === 'expense_split' && !reportVis.showIncomeVsExpense) return false;
+    return true;
+  });
+
   const clearFilters=()=>{
     setFrom('');
     setTo('');
@@ -340,6 +428,31 @@ export default function Reports({onBack}){
 
   const hasFilter = from || to || course;
   const currentReportMeta = REPORT_CARDS.find(c=>c.id===activeReport);
+
+  // Guard: if current activeReport was disabled in Admin controls, prompt to return to menu
+  if (activeReport && !REPORT_CARDS.some(c => c.id === activeReport)) {
+    return (
+      <div className="parent-card">
+        <div className="parent-card-header">
+          <h2>🔒 Report View Disabled</h2>
+          <button type="button" className="btn sm" onClick={()=>setActiveReport(null)} style={{background:'var(--navy)',color:'#fff'}}>
+            ← Back to Reports Menu
+          </button>
+        </div>
+        <div className="sub-card" style={{textAlign:'center',padding:'40px 20px'}}>
+          <p style={{fontSize:'16px',fontWeight:600,color:'var(--navy)'}}>
+            This report tab is currently hidden by Administrator controls.
+          </p>
+          <p className="muted" style={{fontSize:'13px',marginBottom:'20px'}}>
+            An administrator can re-enable visibility in the System Admin control panel.
+          </p>
+          <button type="button" className="btn gold" onClick={()=>setActiveReport(null)}>
+            Return to Reports Menu
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // ==========================================
   // SCREEN 1: Reports Menu Cards Screen
@@ -808,39 +921,201 @@ export default function Reports({onBack}){
             <div className="card kpi" style={{borderLeft:'4px solid var(--navy)'}}>
               Total Amount Collected
               <b style={{color:'var(--grn)'}}>{inr(totalDayAll)}</b>
-              <span className="muted" style={{fontSize:'12px'}}>{totalReceiptsCount} receipts across {dayKeys.length} collection days</span>
+              <span className="muted" style={{fontSize:'12px'}}>{pay.length} receipts across {dayKeys.length} collection days</span>
             </div>
             <div className="card kpi" style={{borderLeft:'4px solid #16a34a'}}>
-              Cash vs Online Breakdown
-              <b style={{fontSize:'17px',color:'var(--navy)'}}>Cash: {inr(totalDayCash)}</b>
-              <span className="muted" style={{fontSize:'12px'}}>Online / UPI: <b>{inr(totalDayOnline)}</b></span>
+              Cash Received
+              <b style={{fontSize:'18px',color:'var(--navy)'}}>{inr(totalDayCash)}</b>
+              <span className="muted" style={{fontSize:'12px'}}>Direct cash collections</span>
+            </div>
+            <div className="card kpi" style={{borderLeft:'4px solid #4338ca'}}>
+              Online Received
+              <b style={{fontSize:'18px',color:'#4338ca'}}>{inr(totalDayOnline)}</b>
+              <span className="muted" style={{fontSize:'12px'}}>UPI, Net Banking, QR</span>
             </div>
             <div className="card kpi" style={{borderLeft:'4px solid var(--gold)'}}>
               Average Collection per Day
               <b style={{color:'var(--navy)'}}>{inr(dayKeys.length ? Math.round(totalDayAll / dayKeys.length) : 0)}</b>
-              <span className="muted" style={{fontSize:'12px'}}>Based on active payment days</span>
+              <span className="muted" style={{fontSize:'12px'}}>Based on {dayKeys.length} active collection days</span>
             </div>
           </div>
 
-          {/* Day-Wise Summary Table */}
-          <Tbl
-            rows={[
-              ...dayRows,
-              {
-                'Date': 'TOTAL',
-                'Receipts Count': totalReceiptsCount,
-                'Students (Name & Mobile)': `${pay.length} payments total`,
-                'Cash Collection': totalDayCash,
-                'Online Collection': totalDayOnline,
-                'Total Day Collection': totalDayAll
-              }
-            ]}
-            name="day_wise_collection_summary"
-          />
+          {/* Professional Daily Payment Collection Register */}
+          <div className="sub-card">
+            {/* Formal Report Header for Print and Display */}
+            <div className="print-header">
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+                <div>
+                  <h2 style={{margin:0,fontSize:'18pt',color:'#0f172a',textTransform:'uppercase',letterSpacing:'0.5px'}}>D'code IAS Accounts</h2>
+                  <h3 style={{margin:'2px 0 0',fontSize:'13pt',fontWeight:600,color:'#334155'}}>Daily Payment Collection Report / Register</h3>
+                  <p style={{margin:'4px 0 0',fontSize:'9pt',color:'#64748b'}}>
+                    Period: <b>{from ? toDmy(from) : 'All Recorded Dates'}</b> to <b>{to ? toDmy(to) : 'Present'}</b> | Filter: <b>{course ? (courses.find(c=>c[0]===course)?.[1] || 'Filtered Course') : 'All Courses'}</b>
+                  </p>
+                </div>
+                <div style={{textAlign:'right',fontSize:'9pt',color:'#64748b'}}>
+                  <div>Report Generated: <b>{toDmy(today())}</b></div>
+                  <div>Status: <b>Official Financial Record</b></div>
+                </div>
+              </div>
+            </div>
 
-          {/* Detailed Itemized Receipts per Day */}
-          <h4 style={{margin:'24px 0 10px',color:'var(--navy)'}}>📋 All Payment Receipts in Selected Period</h4>
-          <Tbl rows={payRows} name="itemized_daily_receipts"/>
+            {/* Action Bar (Hidden when printed) */}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px',flexWrap:'wrap',gap:'8px'}}>
+              <div>
+                <span style={{fontWeight:700,color:'var(--navy)',fontSize:'15px'}}>
+                  📅 Daily Payment Collection Report
+                </span>
+                <span className="muted" style={{fontSize:'12px',marginLeft:'8px'}}>
+                  (Structured date-wise transactions with daily total amounts and overall summary)
+                </span>
+              </div>
+              <div style={{display:'flex',gap:'8px'}}>
+                <button 
+                  type="button"
+                  className="btn sm outline"
+                  onClick={()=>window.print()}
+                  style={{display:'inline-flex',alignItems:'center',gap:'4px'}}
+                >
+                  🖨️ Print Report
+                </button>
+                <button 
+                  type="button"
+                  className="btn sm gold" 
+                  onClick={()=>exportXlsx(dayWiseGroupedExportRows, 'Daily_Payment_Collection_Report')}
+                >
+                  📥 Download Day-wise Excel
+                </button>
+              </div>
+            </div>
+
+            <div className="wrap">
+              <table style={{width:'100%',borderCollapse:'collapse'}}>
+                <thead>
+                  <tr style={{background:'#f1f5f9',color:'#0f172a'}}>
+                    <th style={{textAlign:'center',width:'50px'}}>S.No</th>
+                    <th style={{width:'100px'}}>Date</th>
+                    <th>Student Name</th>
+                    <th style={{width:'115px'}}>Phone Number</th>
+                    <th>Course</th>
+                    <th style={{textAlign:'center',width:'95px'}}>Payment Mode</th>
+                    <th style={{width:'110px'}}>Trans ID</th>
+                    <th style={{textAlign:'right',width:'100px'}}>Amount</th>
+                    <th>Remarks</th>
+                    <th style={{textAlign:'right',width:'140px'}}>Total Single Day Collection</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dayKeys.length === 0 ? (
+                    <tr><td colSpan="10" style={{textAlign:'center',padding:'24px',color:'#64748b'}}>No payment collection records found for the selected period.</td></tr>
+                  ) : (
+                    dayKeys.map((dateKey) => {
+                      const group = dayMap[dateKey];
+                      return (
+                        <Fragment key={dateKey}>
+                          {/* Payment entries for this date */}
+                          {group.receipts.map((p, pIdx) => {
+                            const stu = studentMap.get(p.studentId);
+                            const mob = (stu && stu.mobile) || p.mobile || '';
+                            return (
+                              <tr key={p.id || pIdx}>
+                                <td style={{textAlign:'center'}}><small>{pIdx + 1}</small></td>
+                                <td><b>{toDmy(p.date)}</b></td>
+                                <td className="student-name-tag">{p.studentName}</td>
+                                <td>{mob ? <span className="mobile-badge">📞 {mob}</span> : ''}</td>
+                                <td>{p.courseName}</td>
+                                <td style={{textAlign:'center'}}>
+                                  <span className="badge" style={{background: p.mode === 'online' ? '#e0e7ff' : '#f1f5fa', color: p.mode === 'online' ? '#4338ca' : '#1e293b'}}>
+                                    {p.mode === 'online' ? 'Online' : 'Cash'}
+                                  </span>
+                                </td>
+                                <td><small>{p.transId || '-'}</small></td>
+                                <td style={{textAlign:'right'}}><b>{inr(p.amount)}</b></td>
+                                <td><small>{p.remarks || '-'}</small></td>
+                                <td></td>
+                              </tr>
+                            );
+                          })}
+
+                          {/* Total Amount row after each date's transactions */}
+                          {/* Light background shading, bold formatting, remaining columns blank, value only */}
+                          <tr style={{background:'#f8fafc',borderTop:'1px solid #cbd5e1',borderBottom:'1px solid #cbd5e1'}}>
+                            <td></td>
+                            <td><b style={{color:'var(--navy)'}}>{toDmy(dateKey)}</b></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td style={{textAlign:'right',fontWeight:700,color:'var(--navy)',fontSize:'13px'}}>
+                              {inr(group.total)}
+                            </td>
+                          </tr>
+                        </Fragment>
+                      );
+                    })
+                  )}
+
+                  {/* Overall Grand Total Row at the Bottom of Table */}
+                  {dayKeys.length > 0 && (
+                    <tr className="total" style={{background:'#f1f5f9',borderTop:'2px solid #334155',borderBottom:'2px solid #334155'}}>
+                      <td></td>
+                      <td>
+                        <b style={{color:'var(--navy)',fontSize:'13px'}}>OVERALL GRAND TOTAL</b>
+                      </td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                      <td style={{textAlign:'right',fontWeight:800,color:'var(--navy)',fontSize:'15px'}}>
+                        {inr(totalDayAll)}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Final Overall Summary Section at the Bottom */}
+            {dayKeys.length > 0 && (
+              <div className="daily-report-summary" style={{marginTop:'22px',padding:'16px 20px',background:'#f8fafc',border:'1px solid #cbd5e1',borderRadius:'8px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px',flexWrap:'wrap',gap:'8px'}}>
+                  <h4 style={{margin:0,color:'var(--navy)',fontSize:'13px',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.5px'}}>
+                    📌 Final Overall Collections Summary
+                  </h4>
+                  <span className="muted" style={{fontSize:'12px'}}>
+                    Verified against {dayKeys.length} collection days & {pay.length} total receipts
+                  </span>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(170px, 1fr))',gap:'12px'}}>
+                  <div style={{background:'#ffffff',padding:'12px 14px',borderRadius:'6px',border:'1px solid #e2e8f0'}}>
+                    <span className="muted" style={{fontSize:'11px',textTransform:'uppercase',display:'block'}}>Active Collection Days</span>
+                    <b style={{fontSize:'16px',color:'var(--navy)'}}>{dayKeys.length} Days</b>
+                  </div>
+                  <div style={{background:'#ffffff',padding:'12px 14px',borderRadius:'6px',border:'1px solid #e2e8f0'}}>
+                    <span className="muted" style={{fontSize:'11px',textTransform:'uppercase',display:'block'}}>Total Receipts Issued</span>
+                    <b style={{fontSize:'16px',color:'var(--navy)'}}>{pay.length} Receipts</b>
+                  </div>
+                  <div style={{background:'#ffffff',padding:'12px 14px',borderRadius:'6px',border:'1px solid #e2e8f0'}}>
+                    <span className="muted" style={{fontSize:'11px',textTransform:'uppercase',display:'block'}}>Total Cash Received</span>
+                    <b style={{fontSize:'16px',color:'#16a34a'}}>{inr(totalDayCash)}</b>
+                  </div>
+                  <div style={{background:'#ffffff',padding:'12px 14px',borderRadius:'6px',border:'1px solid #e2e8f0'}}>
+                    <span className="muted" style={{fontSize:'11px',textTransform:'uppercase',display:'block'}}>Total Online Received</span>
+                    <b style={{fontSize:'16px',color:'#2563eb'}}>{inr(totalDayOnline)}</b>
+                  </div>
+                  <div style={{background:'#ffffff',padding:'12px 14px',borderRadius:'6px',border:'2px solid var(--navy)'}}>
+                    <span className="muted" style={{fontSize:'11px',textTransform:'uppercase',display:'block',fontWeight:700,color:'var(--navy)'}}>Net Total Collection</span>
+                    <b style={{fontSize:'18px',color:'var(--navy)'}}>{inr(totalDayAll)}</b>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

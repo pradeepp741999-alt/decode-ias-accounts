@@ -549,3 +549,77 @@ tr.click { cursor: pointer; }
   .row span:first-child { width: 130px; }
   .filter-card .grid-filter { grid-template-columns: 1fr; }
 }
+
+/* Professional Print Styles for A4 Paper Reports */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 12mm 10mm;
+  }
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 10pt !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  header, nav, .filter-card, .btn, .no-print, button, .hub-action {
+    display: none !important;
+  }
+  .parent-card {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+  }
+  .sub-card {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+  }
+  .wrap {
+    overflow: visible !important;
+  }
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto;
+    font-size: 9pt !important;
+  }
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  thead {
+    display: table-header-group;
+  }
+  th, td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 6px 8px !important;
+  }
+  th {
+    background: #f1f5f9 !important;
+    color: #0f172a !important;
+    font-weight: 700 !important;
+    text-align: left;
+  }
+  .print-header {
+    display: block !important;
+    margin-bottom: 14px;
+    border-bottom: 2px solid #0f172a;
+    padding-bottom: 8px;
+  }
+  .daily-report-summary {
+    page-break-inside: avoid;
+    border: 1.5px solid #94a3b8 !important;
+    background: #f8fafc !important;
+    margin-top: 16px !important;
+  }
+}
+
+.print-header {
+  display: none;
+}

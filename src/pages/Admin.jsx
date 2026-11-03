@@ -1,7 +1,7 @@
 import {useEffect,useState} from 'react';
 import {initializeApp,getApps,getApp} from 'firebase/app';
 import {createUserWithEmailAndPassword,getAuth,signOut} from 'firebase/auth';
-import {addDoc,collection,doc,getDocs,setDoc,updateDoc} from 'firebase/firestore';
+import {addDoc,collection,doc,getDoc,getDocs,setDoc,updateDoc} from 'firebase/firestore';
 import {cfg,db,emailOf} from '../firebase';
 import {inr} from '../util';
 
@@ -14,18 +14,58 @@ const ROLES=[
   ['super_admin','Super admin (Full access)']
 ];
 
+const DEFAULT_REPORT_VIS = {
+  showPendingChart: true,
+  showDueDateCrossed: true,
+  showIncomeVsExpense: true
+};
+
 export default function Admin({onBack}){
   const [U,setU]=useState([]),[C,setC]=useState([]);
   const [f,setF]=useState({name:'',username:'',password:'',role:'fees'});
   const [c,setCf]=useState({name:'',fee:''});
   const [msg,setMsg]=useState('');
 
+  // Report tabs visibility control state
+  const [reportVis, setReportVis] = useState(() => {
+    try {
+      const saved = localStorage.getItem('decode_report_visibility');
+      return saved ? { ...DEFAULT_REPORT_VIS, ...JSON.parse(saved) } : DEFAULT_REPORT_VIS;
+    } catch (e) {
+      return DEFAULT_REPORT_VIS;
+    }
+  });
+  const [visMsg, setVisMsg] = useState('');
+
   const load=async()=>{
     setU((await getDocs(collection(db,'users'))).docs.map(d=>({id:d.id,...d.data()})));
     setC((await getDocs(collection(db,'courses'))).docs.map(d=>({id:d.id,...d.data()})));
+    try {
+      const snap = await getDoc(doc(db, 'settings', 'report_visibility'));
+      if (snap.exists()) {
+        const data = snap.data();
+        setReportVis(prev => ({ ...prev, ...data }));
+        localStorage.setItem('decode_report_visibility', JSON.stringify(data));
+      }
+    } catch (_) {}
   };
 
   useEffect(()=>{load();},[]);
+
+  const handleToggleReportVis = async (field, checked) => {
+    const updated = { ...reportVis, [field]: checked };
+    setReportVis(updated);
+    try {
+      localStorage.setItem('decode_report_visibility', JSON.stringify(updated));
+      window.dispatchEvent(new Event('report_vis_changed'));
+      await setDoc(doc(db, 'settings', 'report_visibility'), updated);
+      setVisMsg('Saved successfully!');
+      setTimeout(() => setVisMsg(''), 2500);
+    } catch (err) {
+      setVisMsg('Saved locally');
+      setTimeout(() => setVisMsg(''), 2500);
+    }
+  };
 
   const addUser=async e=>{
     e.preventDefault();
@@ -143,6 +183,94 @@ export default function Admin({onBack}){
               ))}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Sub-card 3: Report Cards & Analytics Visibility Controls */}
+      <div className="sub-card" style={{border:'2px solid #e2e8f0'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px',flexWrap:'wrap',gap:'8px'}}>
+          <div>
+            <h3 style={{margin:0,color:'var(--navy)'}}>📊 Records & Reports Tabs Display Controls</h3>
+            <p className="muted" style={{margin:'4px 0 0',fontSize:'13px'}}>
+              Control which advanced report tabs and analytics cards are visible to staff in the Records & Reports menu. Tick checkbox to show, uncheck to hide.
+            </p>
+          </div>
+          {visMsg && (
+            <span style={{fontSize:'12px',color:'#065f46',fontWeight:700,background:'#d1fae5',padding:'4px 12px',borderRadius:'16px',border:'1px solid #a7f3d0'}}>
+              ✓ {visMsg}
+            </span>
+          )}
+        </div>
+
+        <div style={{display:'flex',flexDirection:'column',gap:'12px',marginTop:'16px'}}>
+          {/* Tab 1: Pending chart */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',borderRadius:'8px',border: reportVis.showPendingChart ? '1px solid #bbf7d0' : '1px solid #e2e8f0', background: reportVis.showPendingChart ? '#f0fdf4' : '#f8fafc',transition:'all 0.2s ease'}}>
+            <label style={{display:'flex',alignItems:'center',gap:'14px',margin:0,cursor:'pointer',userSelect:'none',flex:1}}>
+              <input 
+                type="checkbox" 
+                checked={reportVis.showPendingChart} 
+                onChange={e=>handleToggleReportVis('showPendingChart', e.target.checked)}
+                style={{width:'20px',height:'20px',accentColor:'var(--navy)',cursor:'pointer'}}
+              />
+              <div>
+                <span style={{fontWeight:700,fontSize:'14px',color:'var(--navy)',display:'flex',alignItems:'center',gap:'6px'}}>
+                  <span>📈</span> Pending chart
+                </span>
+                <p className="muted" style={{margin:'2px 0 0',fontSize:'12px'}}>
+                  Visual comparative bar chart of pending fees by course with student name & mobile breakdown.
+                </p>
+              </div>
+            </label>
+            <span className="badge" style={{background: reportVis.showPendingChart ? '#dcfce7' : '#fee2e2', color: reportVis.showPendingChart ? '#15803d' : '#991b1b',fontWeight:700,padding:'4px 10px'}}>
+              {reportVis.showPendingChart ? '✓ Shown in Reports' : '✕ Hidden from Staff'}
+            </span>
+          </div>
+
+          {/* Tab 2: Due date crossed */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',borderRadius:'8px',border: reportVis.showDueDateCrossed ? '1px solid #bbf7d0' : '1px solid #e2e8f0', background: reportVis.showDueDateCrossed ? '#f0fdf4' : '#f8fafc',transition:'all 0.2s ease'}}>
+            <label style={{display:'flex',alignItems:'center',gap:'14px',margin:0,cursor:'pointer',userSelect:'none',flex:1}}>
+              <input 
+                type="checkbox" 
+                checked={reportVis.showDueDateCrossed} 
+                onChange={e=>handleToggleReportVis('showDueDateCrossed', e.target.checked)}
+                style={{width:'20px',height:'20px',accentColor:'var(--navy)',cursor:'pointer'}}
+              />
+              <div>
+                <span style={{fontWeight:700,fontSize:'14px',color:'var(--navy)',display:'flex',alignItems:'center',gap:'6px'}}>
+                  <span>⚠️</span> Due date crossed
+                </span>
+                <p className="muted" style={{margin:'2px 0 0',fontSize:'12px'}}>
+                  Immediate tracker for students whose fees have crossed the scheduled due date with mobile numbers.
+                </p>
+              </div>
+            </label>
+            <span className="badge" style={{background: reportVis.showDueDateCrossed ? '#dcfce7' : '#fee2e2', color: reportVis.showDueDateCrossed ? '#15803d' : '#991b1b',fontWeight:700,padding:'4px 10px'}}>
+              {reportVis.showDueDateCrossed ? '✓ Shown in Reports' : '✕ Hidden from Staff'}
+            </span>
+          </div>
+
+          {/* Tab 3: Income vs Expenses & Petty Cash */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',borderRadius:'8px',border: reportVis.showIncomeVsExpense ? '1px solid #bbf7d0' : '1px solid #e2e8f0', background: reportVis.showIncomeVsExpense ? '#f0fdf4' : '#f8fafc',transition:'all 0.2s ease'}}>
+            <label style={{display:'flex',alignItems:'center',gap:'14px',margin:0,cursor:'pointer',userSelect:'none',flex:1}}>
+              <input 
+                type="checkbox" 
+                checked={reportVis.showIncomeVsExpense} 
+                onChange={e=>handleToggleReportVis('showIncomeVsExpense', e.target.checked)}
+                style={{width:'20px',height:'20px',accentColor:'var(--navy)',cursor:'pointer'}}
+              />
+              <div>
+                <span style={{fontWeight:700,fontSize:'14px',color:'var(--navy)',display:'flex',alignItems:'center',gap:'6px'}}>
+                  <span>🧾</span> Income vs Expenses & Petty Cash
+                </span>
+                <p className="muted" style={{margin:'2px 0 0',fontSize:'12px'}}>
+                  Complete institutional accounting: Student fees inflow vs Expenses outflow, and Office Boy petty cash split & reconciliation.
+                </p>
+              </div>
+            </label>
+            <span className="badge" style={{background: reportVis.showIncomeVsExpense ? '#dcfce7' : '#fee2e2', color: reportVis.showIncomeVsExpense ? '#15803d' : '#991b1b',fontWeight:700,padding:'4px 10px'}}>
+              {reportVis.showIncomeVsExpense ? '✓ Shown in Reports' : '✕ Hidden from Staff'}
+            </span>
+          </div>
         </div>
       </div>
     </div>
